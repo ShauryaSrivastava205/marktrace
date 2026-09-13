@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { LogOut } from "lucide-react"
 
+import { HealthStatus } from "@/components/health-status"
+
 export const metadata: Metadata = {
   title: "Dashboard — MarkTrace",
 }
@@ -38,6 +40,7 @@ export default function DashboardPage() {
         <p className="mt-3 text-sm text-muted-foreground">
           Dashboard development starts here.
         </p>
+        <HealthStatus />
       </div>
     </main>
   )
