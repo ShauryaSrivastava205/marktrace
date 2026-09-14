@@ -216,7 +216,7 @@ export function LoginForm() {
       <p className="text-center text-sm text-muted-foreground">
         New to MarkTrace?{" "}
         <a
-          href="#"
+          href="/signup"
           className="text-primary underline-offset-4 decoration-transparent transition-colors hover:decoration-primary/70 hover:underline"
         >
           Create account

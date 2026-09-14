@@ -39,3 +39,38 @@ export async function mockLogin(
 
   return { success: true }
 }
+
+export type SignupCredentials = {
+  fullName: string
+  email: string
+  password: string
+}
+
+export type SignupResult =
+  | { success: true }
+  | { success: false; error: string }
+
+/**
+ * Mock registration for the frontend-only phase of MarkTrace. Mirrors
+ * `mockLogin` so it can later be swapped for a call to the FastAPI backend
+ * (`POST /api/auth/signup`) without touching any presentation code.
+ */
+export async function mockSignup(
+  credentials: SignupCredentials,
+): Promise<SignupResult> {
+  await new Promise((resolve) => setTimeout(resolve, 500))
+
+  if (credentials.fullName.trim().length === 0) {
+    return { success: false, error: "Enter your full name." }
+  }
+
+  if (!EMAIL_PATTERN.test(credentials.email)) {
+    return { success: false, error: "Enter a valid email address." }
+  }
+
+  if (credentials.password.length < 8) {
+    return { success: false, error: "Password must be at least 8 characters." }
+  }
+
+  return { success: true }
+}
