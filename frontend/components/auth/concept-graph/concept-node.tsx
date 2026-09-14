@@ -22,6 +22,7 @@ function ConceptNodeImpl({ data, id }: NodeProps & { data: ConceptNodeData }) {
     highlightedNodeIds,
     blastActive,
     reducedMotion,
+    registerNodeElement,
   } = useGraphInteraction()
 
   const isActive = activeNodeId === id
@@ -54,6 +55,7 @@ function ConceptNodeImpl({ data, id }: NodeProps & { data: ConceptNodeData }) {
       transition={{ duration: 0.3, delay: entranceDelay, ease: "easeOut" }}
     >
       <div
+        ref={(el) => registerNodeElement(id, el)}
         role="button"
         tabIndex={0}
         aria-pressed={isLocked}

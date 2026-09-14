@@ -50,6 +50,17 @@ export function ConceptGraph() {
   const [reducedMotion, setReducedMotion] = useState(false)
   const [tilt, setTilt] = useState({ x: 0, y: 0 })
   const blastTimeouts = useRef<ReturnType<typeof setTimeout>[]>([])
+  const nodeElementsRef = useRef<Map<string, HTMLElement>>(new Map())
+
+  const registerNodeElement = useCallback((id: string, el: HTMLElement | null) => {
+    if (el) {
+      nodeElementsRef.current.set(id, el)
+    } else {
+      nodeElementsRef.current.delete(id)
+    }
+  }, [])
+
+  const getNodeElement = useCallback((id: string) => nodeElementsRef.current.get(id) ?? null, [])
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -152,6 +163,7 @@ export function ConceptGraph() {
         highlightedEdgeIds,
         blastActive,
         reducedMotion,
+        registerNodeElement,
       }}
     >
       <div className="flex h-full w-full flex-col">
@@ -175,7 +187,7 @@ export function ConceptGraph() {
           onClick={(e) => {
             if (e.target === containerRef.current) setLockedNodeId(null)
           }}
-          className="relative mt-2 min-h-0 flex-1 w-full [perspective:1200px]"
+          className="relative mt-2 min-h-0 flex-1 w-full overflow-hidden [perspective:1200px]"
         >
           <div
             className="concept-flow h-full w-full transition-transform duration-200 ease-out"
@@ -200,13 +212,21 @@ export function ConceptGraph() {
               zoomOnScroll={false}
               zoomOnPinch={false}
               zoomOnDoubleClick={false}
-              preventScrolling={false}
+              preventScrolling
+              autoPanOnNodeDrag={false}
+              autoPanOnConnect={false}
+              autoPanOnSelection={false}
+              autoPanOnNodeFocus={false}
               minZoom={0.9}
               maxZoom={1.5}
             />
           </div>
 
-          <InfoPanel nodeId={lockedNodeId ?? hoveredNodeId} />
+          <InfoPanel
+            nodeId={lockedNodeId ?? hoveredNodeId}
+            instant={lockedNodeId !== null}
+            getAnchorEl={getNodeElement}
+          />
         </div>
       </div>
     </GraphInteractionContext.Provider>

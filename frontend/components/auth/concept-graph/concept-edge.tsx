@@ -42,7 +42,7 @@ export function ConceptEdge({
       />
       {isActive && !reducedMotion && (
         <circle r={2.5} fill="var(--primary)">
-          <animateMotion dur="1.1s" repeatCount="indefinite" path={path} />
+          <animateMotion dur="1.1s" repeatCount="1" fill="freeze" path={path} />
         </circle>
       )}
     </>

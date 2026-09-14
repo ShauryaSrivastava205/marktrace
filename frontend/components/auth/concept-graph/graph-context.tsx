@@ -11,6 +11,8 @@ export interface GraphInteractionState {
   highlightedEdgeIds: Set<string>
   blastActive: boolean
   reducedMotion: boolean
+  /** Lets a node register its rendered DOM element so the tooltip can anchor beside it. */
+  registerNodeElement: (id: string, el: HTMLElement | null) => void
 }
 
 export const GraphInteractionContext = createContext<GraphInteractionState | null>(null)
