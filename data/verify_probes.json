@@ -1,0 +1,98 @@
+{
+  "probe_version": "1.0",
+  "subject": "dsa",
+  "probes": {
+    "recursion": {
+      "root_concept_id": "recursion",
+      "downstream_concept_id": "dp",
+      "questions": [
+        {
+          "question_id": "r_dir_p1",
+          "task_type": "direct",
+          "concept_id": "recursion",
+          "prompt": "A recursive function computes power(x, n) = x^n. Which is the correct recursive step?",
+          "options": {
+            "A": "return x * power(x, n-1)",
+            "B": "return power(x, n-1)",
+            "C": "return x * power(x, n)",
+            "D": "return x + power(x, n-1)"
+          },
+          "correct": "A"
+        },
+        {
+          "question_id": "d_cau_p1",
+          "task_type": "causal",
+          "concept_id": "dp",
+          "prompt": "To solve a DP problem top-down (memoization), what must you define FIRST?",
+          "options": {
+            "A": "The recursive subproblem / recurrence relation",
+            "B": "The final answer's value",
+            "C": "The programming language",
+            "D": "The array size only"
+          },
+          "correct": "A"
+        },
+        {
+          "question_id": "r_trn_p1",
+          "task_type": "transfer",
+          "concept_id": "recursion",
+          "concept_hidden": true,
+          "prompt": "You must explore every folder and sub-folder on a computer to find a file. Which approach naturally fits?",
+          "options": {
+            "A": "Look in a folder, and for each sub-folder repeat the same process",
+            "B": "Sort all folders alphabetically first",
+            "C": "Check only the top folder",
+            "D": "Use a single loop over a fixed list"
+          },
+          "correct": "A"
+        }
+      ]
+    },
+    "graph": {
+      "root_concept_id": "graph",
+      "downstream_concept_id": "bfs",
+      "questions": [
+        {
+          "question_id": "g_dir_p1",
+          "task_type": "direct",
+          "concept_id": "graph",
+          "prompt": "In a graph, the 'degree' of a vertex is...?",
+          "options": {
+            "A": "The number of edges connected to it",
+            "B": "Its distance from the start vertex",
+            "C": "Its index in the array",
+            "D": "The total number of vertices in the graph"
+          },
+          "correct": "A"
+        },
+        {
+          "question_id": "b_cau_p1",
+          "task_type": "causal",
+          "concept_id": "bfs",
+          "prompt": "BFS finds the shortest path in an unweighted graph because it...?",
+          "options": {
+            "A": "Explores nearer vertices before farther ones, level by level",
+            "B": "Sorts the edges by weight first",
+            "C": "Jumps randomly between vertices",
+            "D": "Only works on trees"
+          },
+          "correct": "A"
+        },
+        {
+          "question_id": "g_trn_p1",
+          "task_type": "transfer",
+          "concept_id": "graph",
+          "concept_hidden": true,
+          "prompt": "In a friend network, you want to find 'how many handshakes separate two people.' This is best modeled as...?",
+          "options": {
+            "A": "People as nodes, friendships as edges, then find the shortest connection",
+            "B": "A sorted list of names",
+            "C": "One number stored per person",
+            "D": "A stack of profiles"
+          },
+          "correct": "A"
+        }
+      ]
+    }
+  }
+}
