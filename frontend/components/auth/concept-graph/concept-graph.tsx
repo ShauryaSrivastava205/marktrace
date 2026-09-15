@@ -14,32 +14,35 @@ import {
   CONCEPT_EDGES,
   CONCEPT_NODES,
   getConnectedEdgeIds,
+  type BlastRadiusStep,
+  type ConceptEdgeMeta,
+  type ConceptMeta,
 } from "./data"
 
 const nodeTypes = { concept: ConceptNode }
 const edgeTypes = { concept: ConceptEdge }
 
-const initialNodes: Node[] = CONCEPT_NODES.map((meta, index) => ({
-  id: meta.id,
-  type: "concept",
-  position: { x: meta.x, y: meta.y },
-  data: { meta, index },
-  draggable: false,
-  selectable: false,
-}))
-
-const initialEdges: Edge[] = CONCEPT_EDGES.map((e, index) => ({
-  id: e.id,
-  source: e.source,
-  target: e.target,
-  type: "concept",
-  selectable: false,
-  data: { index },
-}))
-
 const BLAST_SETTLE_BUFFER = 350
 
-export function ConceptGraph() {
+interface ConceptGraphProps {
+  /** Defaults to the login page's demo dataset when omitted. */
+  nodes?: ConceptMeta[]
+  edges?: ConceptEdgeMeta[]
+  /** Concept ids treated as root gaps — supports more than one. */
+  rootConceptIds?: string[]
+  /** Staggered reveal timeline for "Show Blast Radius". */
+  blastTimeline?: BlastRadiusStep[]
+  /** Play the blast radius once automatically when the graph mounts. */
+  autoTriggerBlastRadius?: boolean
+}
+
+export function ConceptGraph({
+  nodes = CONCEPT_NODES,
+  edges = CONCEPT_EDGES,
+  rootConceptIds = ["recursion"],
+  blastTimeline = BLAST_RADIUS_TIMELINE,
+  autoTriggerBlastRadius = false,
+}: ConceptGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [lockedNodeId, setLockedNodeId] = useState<string | null>(null)
@@ -78,29 +81,55 @@ export function ConceptGraph() {
 
   const activeNodeId = lockedNodeId ?? hoveredNodeId
 
+  const rfNodes: Node[] = useMemo(
+    () =>
+      nodes.map((meta, index) => ({
+        id: meta.id,
+        type: "concept",
+        position: { x: meta.x, y: meta.y },
+        data: { meta, index },
+        draggable: false,
+        selectable: false,
+      })),
+    [nodes],
+  )
+
+  const rfEdges: Edge[] = useMemo(
+    () =>
+      edges.map((e, index) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: "concept",
+        selectable: false,
+        data: { index },
+      })),
+    [edges],
+  )
+
   const blastNodeIds = useMemo(() => {
     if (!blastActive) return new Set<string>()
-    return new Set(["recursion", ...affectedNodeIds])
-  }, [blastActive, affectedNodeIds])
+    return new Set([...rootConceptIds, ...affectedNodeIds])
+  }, [blastActive, affectedNodeIds, rootConceptIds])
 
   const highlightedNodeIds = useMemo(() => {
     if (blastActive) return blastNodeIds
     if (activeNodeId) {
-      const connected = CONCEPT_EDGES.filter(
-        (e) => e.source === activeNodeId || e.target === activeNodeId,
-      ).flatMap((e) => [e.source, e.target])
+      const connected = edges
+        .filter((e) => e.source === activeNodeId || e.target === activeNodeId)
+        .flatMap((e) => [e.source, e.target])
       return new Set([activeNodeId, ...connected])
     }
     return new Set<string>()
-  }, [activeNodeId, blastActive, blastNodeIds])
+  }, [activeNodeId, blastActive, blastNodeIds, edges])
 
   const highlightedEdgeIds = useMemo(() => {
     if (blastActive) return activeBlastEdgeIds
     if (activeNodeId) {
-      return new Set(getConnectedEdgeIds(activeNodeId))
+      return new Set(getConnectedEdgeIds(activeNodeId, edges))
     }
     return new Set<string>()
-  }, [activeNodeId, blastActive, activeBlastEdgeIds])
+  }, [activeNodeId, blastActive, activeBlastEdgeIds, edges])
 
   const triggerBlastRadius = useCallback(() => {
     blastTimeouts.current.forEach(clearTimeout)
@@ -113,13 +142,13 @@ export function ConceptGraph() {
     setActiveBlastEdgeIds(new Set())
 
     if (reducedMotion) {
-      setAffectedNodeIds(new Set(BLAST_RADIUS_TIMELINE.map((s) => s.nodeId)))
-      setActiveBlastEdgeIds(new Set(BLAST_RADIUS_TIMELINE.map((s) => s.edgeId)))
+      setAffectedNodeIds(new Set(blastTimeline.map((s) => s.nodeId)))
+      setActiveBlastEdgeIds(new Set(blastTimeline.map((s) => s.edgeId)))
       setBlastComplete(true)
       return
     }
 
-    BLAST_RADIUS_TIMELINE.forEach((step) => {
+    blastTimeline.forEach((step) => {
       blastTimeouts.current.push(
         setTimeout(() => {
           setActiveBlastEdgeIds((prev) => new Set(prev).add(step.edgeId))
@@ -128,11 +157,16 @@ export function ConceptGraph() {
       )
     })
 
-    const lastDelay = BLAST_RADIUS_TIMELINE[BLAST_RADIUS_TIMELINE.length - 1]?.delay ?? 0
+    const lastDelay = blastTimeline[blastTimeline.length - 1]?.delay ?? 0
     blastTimeouts.current.push(
       setTimeout(() => setBlastComplete(true), lastDelay + BLAST_SETTLE_BUFFER),
     )
-  }, [reducedMotion])
+  }, [reducedMotion, blastTimeline])
+
+  useEffect(() => {
+    if (!autoTriggerBlastRadius) return
+    triggerBlastRadius()
+  }, [autoTriggerBlastRadius, triggerBlastRadius])
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -151,6 +185,7 @@ export function ConceptGraph() {
   }, [])
 
   const revealedCount = affectedNodeIds.size
+  const affectedConceptCount = nodes.length - rootConceptIds.length
 
   return (
     <GraphInteractionContext.Provider
@@ -164,6 +199,8 @@ export function ConceptGraph() {
         blastActive,
         reducedMotion,
         registerNodeElement,
+        nodes,
+        edges,
       }}
     >
       <div className="flex h-full w-full flex-col">
@@ -176,6 +213,8 @@ export function ConceptGraph() {
             active={blastActive}
             complete={blastComplete}
             revealedCount={revealedCount}
+            rootCount={rootConceptIds.length}
+            targetCount={affectedConceptCount}
             onTrigger={triggerBlastRadius}
           />
         </motion.div>
@@ -197,8 +236,8 @@ export function ConceptGraph() {
             }}
           >
             <ReactFlow
-              nodes={initialNodes}
-              edges={initialEdges}
+              nodes={rfNodes}
+              edges={rfEdges}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView

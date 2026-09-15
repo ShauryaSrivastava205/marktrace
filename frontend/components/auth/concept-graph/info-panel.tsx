@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { ArrowRight } from "lucide-react"
-import { CONCEPT_NODES, getDependencyLabels } from "./data"
+import { useGraphInteraction } from "./graph-context"
 
 interface InfoPanelProps {
   nodeId: string | null
@@ -19,6 +19,7 @@ const VIEWPORT_MARGIN = 8
 type Position = { top: number; left: number }
 
 export function InfoPanel({ nodeId, instant, getAnchorEl }: InfoPanelProps) {
+  const { nodes, edges } = useGraphInteraction()
   const [mounted, setMounted] = useState(false)
   const [visibleNodeId, setVisibleNodeId] = useState<string | null>(null)
   const [position, setPosition] = useState<Position | null>(null)
@@ -58,8 +59,14 @@ export function InfoPanel({ nodeId, instant, getAnchorEl }: InfoPanelProps) {
     }
   }, [nodeId, instant])
 
-  const meta = visibleNodeId ? CONCEPT_NODES.find((n) => n.id === visibleNodeId) : null
-  const dependsOn = meta && !meta.isRoot ? getDependencyLabels(meta.id) : []
+  const meta = visibleNodeId ? nodes.find((n) => n.id === visibleNodeId) : null
+  const dependsOn =
+    meta && !meta.isRoot
+      ? edges
+          .filter((e) => e.target === meta.id)
+          .map((e) => nodes.find((n) => n.id === e.source)?.label)
+          .filter((label): label is string => Boolean(label))
+      : []
 
   // Measure the tooltip's real size once it is in the DOM, then place it
   // above the node (or below, if there isn't room) so it never overlaps it.
@@ -121,13 +128,17 @@ export function InfoPanel({ nodeId, instant, getAnchorEl }: InfoPanelProps) {
           <p className="font-sans text-[12px] text-muted-foreground">
             Mastery: <span className="text-foreground">{meta.mastery}%</span>
           </p>
-          <p className="font-sans text-[12px] text-muted-foreground">
-            Exam exposure: <span className="text-foreground">{meta.examMarks} marks</span>
-          </p>
-          <p className="font-sans text-[12px] leading-snug text-muted-foreground">
-            Likely misconception:{" "}
-            <span className="text-foreground">&ldquo;{meta.misconception}&rdquo;</span>
-          </p>
+          {meta.examMarks !== undefined && (
+            <p className="font-sans text-[12px] text-muted-foreground">
+              Exam exposure: <span className="text-foreground">{meta.examMarks} marks</span>
+            </p>
+          )}
+          {meta.misconception && (
+            <p className="font-sans text-[12px] leading-snug text-muted-foreground">
+              Likely misconception:{" "}
+              <span className="text-foreground">&ldquo;{meta.misconception}&rdquo;</span>
+            </p>
+          )}
         </div>
       ) : (
         <div className="mt-1.5 space-y-1">

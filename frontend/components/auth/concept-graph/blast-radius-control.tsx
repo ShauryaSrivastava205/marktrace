@@ -4,17 +4,27 @@ import { useEffect, useState } from "react"
 import { motion, animate } from "motion/react"
 import { RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { AFFECTED_CONCEPT_COUNT } from "./data"
 import { useGraphInteraction } from "./graph-context"
 
 interface BlastRadiusControlProps {
   active: boolean
   complete: boolean
   revealedCount: number
+  /** Number of root-gap concepts in the current dataset. */
+  rootCount: number
+  /** Total concepts the blast radius can reveal. */
+  targetCount: number
   onTrigger: () => void
 }
 
-export function BlastRadiusControl({ active, complete, revealedCount, onTrigger }: BlastRadiusControlProps) {
+export function BlastRadiusControl({
+  active,
+  complete,
+  revealedCount,
+  rootCount,
+  targetCount,
+  onTrigger,
+}: BlastRadiusControlProps) {
   const { reducedMotion } = useGraphInteraction()
   const [wasTriggered, setWasTriggered] = useState(false)
   const [displayCount, setDisplayCount] = useState(0)
@@ -25,16 +35,16 @@ export function BlastRadiusControl({ active, complete, revealedCount, onTrigger 
       return
     }
     if (reducedMotion) {
-      setDisplayCount(AFFECTED_CONCEPT_COUNT)
+      setDisplayCount(targetCount)
       return
     }
-    const controls = animate(0, AFFECTED_CONCEPT_COUNT, {
+    const controls = animate(0, targetCount, {
       duration: 0.4,
       ease: "easeOut",
       onUpdate: (value) => setDisplayCount(Math.round(value)),
     })
     return () => controls.stop()
-  }, [complete, reducedMotion])
+  }, [complete, reducedMotion, targetCount])
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -69,7 +79,7 @@ export function BlastRadiusControl({ active, complete, revealedCount, onTrigger 
           aria-live="polite"
         >
           {complete
-            ? `1 root gap → ${displayCount} affected concepts`
+            ? `${rootCount} root gap${rootCount === 1 ? "" : "s"} → ${displayCount} affected concept${displayCount === 1 ? "" : "s"}`
             : "Tracing dependencies…"}
         </span>
       )}
