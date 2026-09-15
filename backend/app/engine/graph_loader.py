@@ -40,6 +40,11 @@ def get_level(concept_id: str) -> int:
     return _node_map()[concept_id]["level"]
 
 
+def get_label(concept_id: str) -> str:
+    """Human-readable label for a concept, e.g. 'Dynamic Programming'."""
+    return _node_map()[concept_id]["label"]
+
+
 @lru_cache(maxsize=1)
 def _parent_map() -> dict[str, list[str]]:
     """concept_id -> list of its direct CONCEPTUAL prerequisites (edge.from for edge.to == concept_id)."""
