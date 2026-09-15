@@ -1,0 +1,47 @@
+{
+  "student_id": "student_042",
+  "answers": [
+    {
+      "question_id": "q1",
+      "concept_ids": ["recursion"],
+      "correct": false,
+      "error_type": "conceptual",
+      "marks": 5
+    },
+    {
+      "question_id": "q2",
+      "concept_ids": ["dp"],
+      "correct": false,
+      "error_type": "conceptual",
+      "marks": 10
+    },
+    {
+      "question_id": "q3",
+      "concept_ids": ["arrays"],
+      "correct": true,
+      "error_type": null,
+      "marks": 5
+    },
+    {
+      "question_id": "q4",
+      "concept_ids": ["graph", "bfs"],
+      "correct": false,
+      "error_type": "procedural",
+      "marks": 8
+    },
+    {
+      "question_id": "q5",
+      "concept_ids": ["binary_search"],
+      "correct": false,
+      "error_type": "careless",
+      "marks": 5
+    },
+    {
+      "question_id": "q6",
+      "concept_ids": ["linked_list"],
+      "correct": false,
+      "error_type": "implementation",
+      "marks": 5
+    }
+  ]
+}
