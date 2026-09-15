@@ -15,6 +15,7 @@ import { Maximize2, Minus, Plus, RotateCcw, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { DiagnosisGraphEdge, DiagnosisGraphNode } from "@/lib/diagnosis"
 import type { DiagnoseResult } from "@/lib/mockDiagnose"
+import { CountUp } from "../count-up"
 import { ConceptNode } from "./concept-node"
 import { ConceptEdge } from "./concept-edge"
 import { HoverCard } from "./hover-card"
@@ -25,6 +26,8 @@ const edgeTypes = { concept: ConceptEdge }
 
 const STEP_MS = 140
 const SETTLE_MS = 320
+/** Perspective stays subtle — this is an instrument, not a carousel. */
+const MAX_TILT_DEG = 2.4
 
 export interface KnowledgeGraphProps {
   diagnose: DiagnoseResult
@@ -55,6 +58,9 @@ function GraphCanvas({
   const { fitView, zoomIn, zoomOut } = useReactFlow()
   const nodeEls = useRef<Map<string, HTMLElement>>(new Map())
   const timeouts = useRef<ReturnType<typeof setTimeout>[]>([])
+  const paperRef = useRef<HTMLDivElement>(null)
+  const glowRef = useRef<HTMLDivElement>(null)
+  const frame = useRef<number | null>(null)
 
   const [blastEdgeIds, setBlastEdgeIds] = useState<Set<string>>(new Set())
   const [blastNodeIds, setBlastNodeIds] = useState<Set<string>>(new Set())
@@ -116,7 +122,10 @@ function GraphCanvas({
 
   useEffect(() => {
     const pending = timeouts.current
-    return () => pending.forEach(clearTimeout)
+    return () => {
+      pending.forEach(clearTimeout)
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+    }
   }, [])
 
   const blastRootId = diagnose.blast_radius.root_concept_id
@@ -165,6 +174,36 @@ function GraphCanvas({
     [model.nodes, hoveredId],
   )
 
+  const handleParallax = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (reduceMotion) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      const px = (e.clientX - rect.left) / rect.width - 0.5
+      const py = (e.clientY - rect.top) / rect.height - 0.5
+
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+      frame.current = requestAnimationFrame(() => {
+        const rx = (-py * MAX_TILT_DEG).toFixed(2)
+        const ry = (px * MAX_TILT_DEG).toFixed(2)
+        if (paperRef.current) {
+          paperRef.current.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg) scale(1.04)`
+        }
+        if (glowRef.current) {
+          glowRef.current.style.transform = `translate3d(${(px * -18).toFixed(1)}px, ${(
+            py * -12
+          ).toFixed(1)}px, 0)`
+        }
+      })
+    },
+    [reduceMotion],
+  )
+
+  const resetParallax = useCallback(() => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+    if (paperRef.current) paperRef.current.style.transform = ""
+    if (glowRef.current) glowRef.current.style.transform = ""
+  }, [])
+
   return (
     <GraphInteractionContext.Provider
       value={{
@@ -185,9 +224,12 @@ function GraphCanvas({
       <div className="flex h-full flex-col">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="flex flex-wrap items-center gap-3">
-            <button
+            <motion.button
               type="button"
               onClick={runBlast}
+              whileHover={reduceMotion ? undefined : { y: -1.5 }}
+              whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className={cn(
                 "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] font-medium shadow-sm transition-all duration-150",
                 blastActive
@@ -201,16 +243,21 @@ function GraphCanvas({
                 <Zap className="size-3.5" aria-hidden="true" />
               )}
               {blastComplete ? "Replay blast radius" : "Show blast radius"}
-            </button>
+            </motion.button>
 
             {blastActive && (
               <span
                 aria-live="polite"
                 className="font-sans text-[13px] font-medium text-muted-foreground"
               >
-                {blastComplete
-                  ? `1 root gap → ${blastTotal} affected concept${blastTotal === 1 ? "" : "s"}`
-                  : "Tracing dependencies…"}
+                {blastComplete ? (
+                  <>
+                    1 root gap → <CountUp value={blastTotal} duration={0.6} /> affected concept
+                    {blastTotal === 1 ? "" : "s"}
+                  </>
+                ) : (
+                  "Tracing dependencies…"
+                )}
               </span>
             )}
           </div>
@@ -234,10 +281,30 @@ function GraphCanvas({
         <motion.div
           initial={reduceMotion ? undefined : { opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
+          transition={{ duration: 0.4, delay: reduceMotion ? 0 : 0.15, ease: "easeOut" }}
           onDoubleClick={() => fitView({ padding: 0.14, duration: 260 })}
-          className="diagnosis-flow relative min-h-0 flex-1 bg-grid-paper"
+          onMouseMove={handleParallax}
+          onMouseLeave={resetParallax}
+          className="relative min-h-0 flex-1 overflow-hidden [perspective:1600px]"
         >
+          {/* Depth lives on decorative layers only: rotating React Flow's own
+              ancestor would skew its screen-to-canvas math and drift drags. */}
+          <div
+            ref={paperRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-8 bg-grid-paper transition-transform duration-300 ease-out will-change-transform"
+          />
+          <div
+            ref={glowRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 transition-transform duration-300 ease-out will-change-transform"
+            style={{
+              backgroundImage:
+                "radial-gradient(52% 44% at 50% 24%, color-mix(in oklch, var(--primary) 10%, transparent), transparent 72%)",
+            }}
+          />
+
+          <div className="diagnosis-flow absolute inset-0">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -258,6 +325,7 @@ function GraphCanvas({
             preventScrolling
             onPaneClick={() => onSelect(null)}
           />
+          </div>
         </motion.div>
       </div>
 

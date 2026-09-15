@@ -123,9 +123,14 @@ export function MasteryMeter({
 
   return (
     <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-muted", className)} aria-hidden="true">
+      {/* Width is the real value at all times; the transition only decorates
+          later changes, so a dropped frame can never under-report mastery. */}
       <div
-        className={cn("h-full rounded-full transition-[width] duration-500 ease-out", STATUS_STYLE[status].fill)}
-        style={{ width: `${Math.max(pct, 2)}%` }}
+        className={cn(
+          "h-full rounded-full transition-[width] duration-500 ease-out",
+          STATUS_STYLE[status].fill,
+        )}
+        style={{ width: `${pct}%` }}
       />
     </div>
   )

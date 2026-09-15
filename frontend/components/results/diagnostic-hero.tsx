@@ -5,6 +5,7 @@ import { Activity, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { masteryPercent, summarize } from "@/lib/diagnosis"
 import type { DiagnoseResult } from "@/lib/mockDiagnose"
+import { CountUp } from "./count-up"
 
 interface DiagnosticHeroProps {
   diagnose: DiagnoseResult
@@ -103,19 +104,21 @@ export function DiagnosticHero({ diagnose }: DiagnosticHeroProps) {
           {...step(0.3)}
           className="grid grid-cols-3 gap-6 border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0"
         >
-          <Metric value={summary.marksAssociated} label="Marks associated" />
-          <Metric value={summary.affectedQuestions} label="Affected questions" />
-          <Metric value={summary.downstreamConcepts} label="Downstream concepts" />
+          <Metric value={summary.marksAssociated} label="Marks associated" delay={0.42} />
+          <Metric value={summary.affectedQuestions} label="Affected questions" delay={0.5} />
+          <Metric value={summary.downstreamConcepts} label="Downstream concepts" delay={0.58} />
         </motion.dl>
       </div>
     </section>
   )
 }
 
-function Metric({ value, label }: { value: number; label: string }) {
+function Metric({ value, label, delay }: { value: number; label: string; delay: number }) {
   return (
     <div>
-      <dd className="font-serif text-3xl font-semibold tabular-nums text-foreground">{value}</dd>
+      <dd className="font-serif text-3xl font-semibold tabular-nums text-foreground">
+        <CountUp value={value} delay={delay} />
+      </dd>
       <dt className="mt-1 text-[11px] font-medium uppercase leading-tight tracking-[0.08em] text-muted-foreground">
         {label}
       </dt>
