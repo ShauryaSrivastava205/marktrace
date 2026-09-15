@@ -31,6 +31,16 @@ def get_conceptual_edges() -> list[dict[str, Any]]:
 
 
 @lru_cache(maxsize=1)
+def _node_map() -> dict[str, dict[str, Any]]:
+    return {node["id"]: node for node in get_all_nodes()}
+
+
+def get_level(concept_id: str) -> int:
+    """A concept's depth in the conceptual DAG (1 = root, no conceptual prerequisites)."""
+    return _node_map()[concept_id]["level"]
+
+
+@lru_cache(maxsize=1)
 def _parent_map() -> dict[str, list[str]]:
     """concept_id -> list of its direct CONCEPTUAL prerequisites (edge.from for edge.to == concept_id)."""
     parents: dict[str, list[str]] = {}
