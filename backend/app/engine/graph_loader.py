@@ -81,3 +81,13 @@ def get_conceptual_ancestors(concept_id: str) -> list[str]:
 def get_conceptual_descendants(concept_id: str) -> list[str]:
     """Every concept that transitively depends on `concept_id`, via CONCEPTUAL edges only."""
     return _walk(concept_id, _child_map())
+
+
+@lru_cache(maxsize=1)
+def _edge_strength_map() -> dict[tuple[str, str], str]:
+    return {(e["from"], e["to"]): e["strength"] for e in get_conceptual_edges()}
+
+
+def get_edge_strength(from_id: str, to_id: str) -> str | None:
+    """Strength ('STRONG' or 'SOFT') of the direct CONCEPTUAL edge from_id -> to_id, or None if no such edge exists."""
+    return _edge_strength_map().get((from_id, to_id))
