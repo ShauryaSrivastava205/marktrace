@@ -1,10 +1,15 @@
 import type { DiagnoseResult } from "./mockDiagnose"
 
+/** Casing only — these are how the ids are written, not new information. */
+const ACRONYMS = new Set(["dfs", "bfs", "dp"])
+
 /** "divide_conquer" -> "Divide Conquer" — fallback for ids with no known display name. */
 export function humanizeConceptId(id: string): string {
   return id
     .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) =>
+      ACRONYMS.has(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1),
+    )
     .join(" ")
 }
 

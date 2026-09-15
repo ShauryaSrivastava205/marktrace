@@ -71,7 +71,7 @@ function ConceptNodeImpl({ id, data }: NodeProps & { data: ConceptNodeData }) {
         zIndex: isFocused || isSelected ? 30 : 10 - model.layer,
       }}
       className={cn(
-        "group relative cursor-grab select-none rounded-lg border bg-card px-3.5 py-3 text-left active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative cursor-grab select-none rounded-lg border bg-card px-3 py-2.5 text-left active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         SHADOW[model.layer],
         style.border,
         model.isRootGap && "bg-destructive/[0.05]",
@@ -96,7 +96,7 @@ function ConceptNodeImpl({ id, data }: NodeProps & { data: ConceptNodeData }) {
       )}
 
       <div className="flex items-start justify-between gap-2">
-        <p className="font-sans text-[13.5px] font-semibold leading-snug text-foreground">
+        <p className="font-sans text-[13px] font-semibold leading-snug text-foreground">
           {model.name}
         </p>
         <span className={cn("mt-1 size-2 shrink-0 rounded-full", style.fill)} aria-hidden="true" />
@@ -104,21 +104,25 @@ function ConceptNodeImpl({ id, data }: NodeProps & { data: ConceptNodeData }) {
 
       <p
         className={cn(
-          "mt-1.5 font-sans text-[12px] tabular-nums",
+          "mt-1 font-sans text-[11.5px] tabular-nums leading-tight",
           model.masteryPct === null ? "italic text-muted-foreground" : "text-muted-foreground",
         )}
       >
         {masteryLabel(model.masteryPct, model.evidence)}
       </p>
 
-      <span
-        className={cn(
-          "mt-2 inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]",
-          style.chip,
-        )}
-      >
-        {statusLabel(model.status, model.evidence)}
-      </span>
+      {/* Only the root gaps carry a chip; elsewhere the dot and border do the
+          work, which keeps nodes small enough to stay readable when fitted. */}
+      {model.isRootGap && (
+        <span
+          className={cn(
+            "mt-1.5 inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]",
+            style.chip,
+          )}
+        >
+          {statusLabel(model.status, model.evidence)}
+        </span>
+      )}
     </div>
   )
 }

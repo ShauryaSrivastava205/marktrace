@@ -29,6 +29,12 @@ const SETTLE_MS = 320
 /** Perspective stays subtle — this is an instrument, not a carousel. */
 const MAX_TILT_DEG = 2.4
 
+/**
+ * Fitting must never shrink labels past legibility: below this floor the
+ * graph overflows and the reader pans instead, which is the point of a map.
+ */
+const FIT_OPTIONS = { padding: 0.09, minZoom: 0.88, maxZoom: 1.15 }
+
 export interface KnowledgeGraphProps {
   diagnose: DiagnoseResult
   model: { nodes: DiagnosisGraphNode[]; edges: DiagnosisGraphEdge[] }
@@ -271,7 +277,7 @@ function GraphCanvas({
             </ToolButton>
             <ToolButton
               label="Fit graph to view"
-              onClick={() => fitView({ padding: 0.14, duration: 260 })}
+              onClick={() => fitView({ ...FIT_OPTIONS, duration: 260 })}
             >
               <Maximize2 className="size-3.5" aria-hidden="true" />
             </ToolButton>
@@ -282,7 +288,7 @@ function GraphCanvas({
           initial={reduceMotion ? undefined : { opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4, delay: reduceMotion ? 0 : 0.15, ease: "easeOut" }}
-          onDoubleClick={() => fitView({ padding: 0.14, duration: 260 })}
+          onDoubleClick={() => fitView({ ...FIT_OPTIONS, duration: 260 })}
           onMouseMove={handleParallax}
           onMouseLeave={resetParallax}
           className="relative min-h-0 flex-1 overflow-hidden [perspective:1600px]"
@@ -312,7 +318,7 @@ function GraphCanvas({
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
-            fitViewOptions={{ padding: 0.14 }}
+            fitViewOptions={FIT_OPTIONS}
             minZoom={0.35}
             maxZoom={1.75}
             proOptions={{ hideAttribution: true }}

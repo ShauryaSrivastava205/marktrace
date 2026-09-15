@@ -117,14 +117,15 @@ export interface DiagnosisGraphEdge {
   target: string
 }
 
-export const NODE_WIDTH = 196
-const COL = 232
-const CLUSTER_GAP = 96
+export const NODE_WIDTH = 168
+const COL = 196
+const CLUSTER_GAP = 88
 const ROOT_Y = 0
-const CHILD_START_Y = 215
-const ROW_HEIGHT = 136
-const UNLINKED_GAP = 44
-const MAX_PER_ROW = 4
+const CHILD_START_Y = 186
+const ROW_HEIGHT = 118
+const UNLINKED_GAP = 40
+/** Three per row keeps clusters squarer, so fitView doesn't shrink the text. */
+const MAX_PER_ROW = 3
 
 /**
  * Lays the payload out as a dependency map: root gaps on top, the concepts

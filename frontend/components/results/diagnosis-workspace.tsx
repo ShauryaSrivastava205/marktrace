@@ -53,7 +53,8 @@ export function DiagnosisWorkspace({ diagnose, reviewItems }: DiagnosisWorkspace
     <div className="space-y-12 lg:space-y-14">
       <RootGapCards diagnose={diagnose} onSelectConcept={selectFromOutside} />
 
-      <section ref={graphRef}>
+      {/* The map earns more width than the reading column allows. */}
+      <section ref={graphRef} className="xl:-mx-16">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
           <h2 className="font-serif text-xl font-semibold text-foreground">
             Root-gap dependency map
