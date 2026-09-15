@@ -194,4 +194,18 @@
   .concept-flow .react-flow__pane {
     cursor: default;
   }
+
+  /* Diagnosis map is a workbench: the canvas drags, the nodes drag. */
+  .diagnosis-flow .react-flow__pane {
+    cursor: grab;
+  }
+  .diagnosis-flow .react-flow__pane.dragging {
+    cursor: grabbing;
+  }
+  .diagnosis-flow .react-flow__node {
+    cursor: grab;
+  }
+  .diagnosis-flow .react-flow__node.dragging {
+    cursor: grabbing;
+  }
 }

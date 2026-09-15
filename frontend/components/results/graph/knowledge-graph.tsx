@@ -1,0 +1,363 @@
+"use client"
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { motion, useReducedMotion } from "motion/react"
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  useNodesState,
+  useReactFlow,
+  type Edge,
+  type Node,
+} from "@xyflow/react"
+import "@xyflow/react/dist/style.css"
+import { Maximize2, Minus, Plus, RotateCcw, Zap } from "lucide-react"
+import { cn } from "@/lib/utils"
+import type { DiagnosisGraphEdge, DiagnosisGraphNode } from "@/lib/diagnosis"
+import type { DiagnoseResult } from "@/lib/mockDiagnose"
+import { CountUp } from "../count-up"
+import { ConceptNode } from "./concept-node"
+import { ConceptEdge } from "./concept-edge"
+import { HoverCard } from "./hover-card"
+import { GraphInteractionContext } from "./graph-context"
+
+const nodeTypes = { concept: ConceptNode }
+const edgeTypes = { concept: ConceptEdge }
+
+const STEP_MS = 140
+const SETTLE_MS = 320
+/** Perspective stays subtle — this is an instrument, not a carousel. */
+const MAX_TILT_DEG = 2.4
+
+/**
+ * Fitting must never shrink labels past legibility: below this floor the
+ * graph overflows and the reader pans instead, which is the point of a map.
+ */
+const FIT_OPTIONS = { padding: 0.09, minZoom: 0.88, maxZoom: 1.15 }
+
+export interface KnowledgeGraphProps {
+  diagnose: DiagnoseResult
+  model: { nodes: DiagnosisGraphNode[]; edges: DiagnosisGraphEdge[] }
+  hoveredId: string | null
+  selectedId: string | null
+  onHover: (id: string | null) => void
+  onSelect: (id: string | null) => void
+}
+
+export function KnowledgeGraph(props: KnowledgeGraphProps) {
+  return (
+    <ReactFlowProvider>
+      <GraphCanvas {...props} />
+    </ReactFlowProvider>
+  )
+}
+
+function GraphCanvas({
+  diagnose,
+  model,
+  hoveredId,
+  selectedId,
+  onHover,
+  onSelect,
+}: KnowledgeGraphProps) {
+  const reduceMotion = useReducedMotion() ?? false
+  const { fitView, zoomIn, zoomOut } = useReactFlow()
+  const nodeEls = useRef<Map<string, HTMLElement>>(new Map())
+  const timeouts = useRef<ReturnType<typeof setTimeout>[]>([])
+  const paperRef = useRef<HTMLDivElement>(null)
+  const glowRef = useRef<HTMLDivElement>(null)
+  const frame = useRef<number | null>(null)
+
+  const [blastEdgeIds, setBlastEdgeIds] = useState<Set<string>>(new Set())
+  const [blastNodeIds, setBlastNodeIds] = useState<Set<string>>(new Set())
+  const [blastComplete, setBlastComplete] = useState(false)
+  const [blastActive, setBlastActive] = useState(false)
+
+  const rfNodes = useMemo<Node[]>(
+    () =>
+      model.nodes.map((m) => ({
+        id: m.id,
+        type: "concept",
+        position: { x: m.x, y: m.y },
+        data: { model: m },
+        draggable: true,
+        selectable: false,
+      })),
+    [model],
+  )
+
+  const [nodes, , onNodesChange] = useNodesState(rfNodes)
+
+  const edges = useMemo<Edge[]>(
+    () =>
+      model.edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: "concept",
+        selectable: false,
+      })),
+    [model],
+  )
+
+  const focusId = hoveredId ?? selectedId
+
+  const { relatedIds, relatedEdgeIds } = useMemo(() => {
+    const ids = new Set<string>()
+    const edgeIds = new Set<string>()
+    if (!focusId) return { relatedIds: ids, relatedEdgeIds: edgeIds }
+    ids.add(focusId)
+    for (const e of model.edges) {
+      if (e.source === focusId) {
+        ids.add(e.target)
+        edgeIds.add(e.id)
+      } else if (e.target === focusId) {
+        ids.add(e.source)
+        edgeIds.add(e.id)
+      }
+    }
+    return { relatedIds: ids, relatedEdgeIds: edgeIds }
+  }, [focusId, model.edges])
+
+  const registerNodeEl = useCallback((id: string, el: HTMLElement | null) => {
+    if (el) nodeEls.current.set(id, el)
+    else nodeEls.current.delete(id)
+  }, [])
+
+  const getAnchorEl = useCallback((id: string) => nodeEls.current.get(id) ?? null, [])
+
+  useEffect(() => {
+    const pending = timeouts.current
+    return () => {
+      pending.forEach(clearTimeout)
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+    }
+  }, [])
+
+  const blastRootId = diagnose.blast_radius.root_concept_id
+  const blastSequence = useMemo(
+    () => model.edges.filter((e) => e.source === blastRootId),
+    [model.edges, blastRootId],
+  )
+  const blastTotal = diagnose.blast_radius.unlocked_concepts.length
+
+  const runBlast = useCallback(() => {
+    timeouts.current.forEach(clearTimeout)
+    timeouts.current = []
+
+    onSelect(null)
+    setBlastActive(true)
+    setBlastComplete(false)
+    setBlastEdgeIds(new Set())
+    setBlastNodeIds(new Set([blastRootId]))
+
+    if (reduceMotion) {
+      setBlastEdgeIds(new Set(blastSequence.map((e) => e.id)))
+      setBlastNodeIds(new Set([blastRootId, ...blastSequence.map((e) => e.target)]))
+      setBlastComplete(true)
+      return
+    }
+
+    blastSequence.forEach((edge, i) => {
+      timeouts.current.push(
+        setTimeout(() => {
+          setBlastEdgeIds((prev) => new Set(prev).add(edge.id))
+          setBlastNodeIds((prev) => new Set(prev).add(edge.target))
+        }, STEP_MS * (i + 1)),
+      )
+    })
+
+    timeouts.current.push(
+      setTimeout(
+        () => setBlastComplete(true),
+        STEP_MS * (blastSequence.length + 1) + SETTLE_MS,
+      ),
+    )
+  }, [blastRootId, blastSequence, onSelect, reduceMotion])
+
+  const hoveredNode = useMemo(
+    () => model.nodes.find((n) => n.id === hoveredId) ?? null,
+    [model.nodes, hoveredId],
+  )
+
+  const handleParallax = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (reduceMotion) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      const px = (e.clientX - rect.left) / rect.width - 0.5
+      const py = (e.clientY - rect.top) / rect.height - 0.5
+
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+      frame.current = requestAnimationFrame(() => {
+        const rx = (-py * MAX_TILT_DEG).toFixed(2)
+        const ry = (px * MAX_TILT_DEG).toFixed(2)
+        if (paperRef.current) {
+          paperRef.current.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg) scale(1.04)`
+        }
+        if (glowRef.current) {
+          glowRef.current.style.transform = `translate3d(${(px * -18).toFixed(1)}px, ${(
+            py * -12
+          ).toFixed(1)}px, 0)`
+        }
+      })
+    },
+    [reduceMotion],
+  )
+
+  const resetParallax = useCallback(() => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+    if (paperRef.current) paperRef.current.style.transform = ""
+    if (glowRef.current) glowRef.current.style.transform = ""
+  }, [])
+
+  return (
+    <GraphInteractionContext.Provider
+      value={{
+        focusId,
+        selectedId,
+        relatedIds,
+        relatedEdgeIds,
+        hasFocus: focusId !== null,
+        setHovered: onHover,
+        setSelected: onSelect,
+        blastNodeIds,
+        blastEdgeIds,
+        blastActive,
+        reduceMotion,
+        registerNodeEl,
+      }}
+    >
+      <div className="flex h-full flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <motion.button
+              type="button"
+              onClick={runBlast}
+              whileHover={reduceMotion ? undefined : { y: -1.5 }}
+              whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] font-medium shadow-sm transition-all duration-150",
+                blastActive
+                  ? "border-primary/50 bg-primary/[0.06] text-foreground"
+                  : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground hover:shadow-md",
+              )}
+            >
+              {blastComplete ? (
+                <RotateCcw className="size-3.5" aria-hidden="true" />
+              ) : (
+                <Zap className="size-3.5" aria-hidden="true" />
+              )}
+              {blastComplete ? "Replay blast radius" : "Show blast radius"}
+            </motion.button>
+
+            {blastActive && (
+              <span
+                aria-live="polite"
+                className="font-sans text-[13px] font-medium text-muted-foreground"
+              >
+                {blastComplete ? (
+                  <>
+                    1 root gap → <CountUp value={blastTotal} duration={0.6} /> affected concept
+                    {blastTotal === 1 ? "" : "s"}
+                  </>
+                ) : (
+                  "Tracing dependencies…"
+                )}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            <ToolButton label="Zoom out" onClick={() => zoomOut({ duration: 160 })}>
+              <Minus className="size-3.5" aria-hidden="true" />
+            </ToolButton>
+            <ToolButton label="Zoom in" onClick={() => zoomIn({ duration: 160 })}>
+              <Plus className="size-3.5" aria-hidden="true" />
+            </ToolButton>
+            <ToolButton
+              label="Fit graph to view"
+              onClick={() => fitView({ ...FIT_OPTIONS, duration: 260 })}
+            >
+              <Maximize2 className="size-3.5" aria-hidden="true" />
+            </ToolButton>
+          </div>
+        </div>
+
+        <motion.div
+          initial={reduceMotion ? undefined : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4, delay: reduceMotion ? 0 : 0.15, ease: "easeOut" }}
+          onDoubleClick={() => fitView({ ...FIT_OPTIONS, duration: 260 })}
+          onMouseMove={handleParallax}
+          onMouseLeave={resetParallax}
+          className="relative min-h-0 flex-1 overflow-hidden [perspective:1600px]"
+        >
+          {/* Depth lives on decorative layers only: rotating React Flow's own
+              ancestor would skew its screen-to-canvas math and drift drags. */}
+          <div
+            ref={paperRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-8 bg-grid-paper transition-transform duration-300 ease-out will-change-transform"
+          />
+          <div
+            ref={glowRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 transition-transform duration-300 ease-out will-change-transform"
+            style={{
+              backgroundImage:
+                "radial-gradient(52% 44% at 50% 24%, color-mix(in oklch, var(--primary) 10%, transparent), transparent 72%)",
+            }}
+          />
+
+          <div className="diagnosis-flow absolute inset-0">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            fitView
+            fitViewOptions={FIT_OPTIONS}
+            minZoom={0.35}
+            maxZoom={1.75}
+            proOptions={{ hideAttribution: true }}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            zoomOnDoubleClick={false}
+            panOnDrag
+            zoomOnScroll
+            zoomOnPinch
+            preventScrolling
+            onPaneClick={() => onSelect(null)}
+          />
+          </div>
+        </motion.div>
+      </div>
+
+      <HoverCard node={hoveredNode} diagnose={diagnose} getAnchorEl={getAnchorEl} />
+    </GraphInteractionContext.Provider>
+  )
+}
+
+function ToolButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex size-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </button>
+  )
+}
