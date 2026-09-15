@@ -112,8 +112,8 @@ export function getDescendantIds(rootId: string): string[] {
   return Array.from(new Set([...direct, ...nested]))
 }
 
-export function getConnectedEdgeIds(nodeId: string, edges: ConceptEdgeMeta[] = CONCEPT_EDGES): string[] {
-  return edges.filter((e) => e.source === nodeId || e.target === nodeId).map((e) => e.id)
+export function getConnectedEdgeIds(nodeId: string): string[] {
+  return CONCEPT_EDGES.filter((e) => e.source === nodeId || e.target === nodeId).map((e) => e.id)
 }
 
 /** Labels of the concepts a given node directly depends on (its prerequisites). */

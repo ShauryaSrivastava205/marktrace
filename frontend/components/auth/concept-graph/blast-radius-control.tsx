@@ -4,27 +4,17 @@ import { useEffect, useState } from "react"
 import { motion, animate } from "motion/react"
 import { RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { AFFECTED_CONCEPT_COUNT } from "./data"
 import { useGraphInteraction } from "./graph-context"
 
 interface BlastRadiusControlProps {
   active: boolean
   complete: boolean
   revealedCount: number
-  /** Number of root-gap concepts in the current dataset. */
-  rootCount: number
-  /** Total concepts the blast radius can reveal. */
-  targetCount: number
   onTrigger: () => void
 }
 
-export function BlastRadiusControl({
-  active,
-  complete,
-  revealedCount,
-  rootCount,
-  targetCount,
-  onTrigger,
-}: BlastRadiusControlProps) {
+export function BlastRadiusControl({ active, complete, revealedCount, onTrigger }: BlastRadiusControlProps) {
   const { reducedMotion } = useGraphInteraction()
   const [wasTriggered, setWasTriggered] = useState(false)
   const [displayCount, setDisplayCount] = useState(0)
@@ -35,16 +25,16 @@ export function BlastRadiusControl({
       return
     }
     if (reducedMotion) {
-      setDisplayCount(targetCount)
+      setDisplayCount(AFFECTED_CONCEPT_COUNT)
       return
     }
-    const controls = animate(0, targetCount, {
+    const controls = animate(0, AFFECTED_CONCEPT_COUNT, {
       duration: 0.4,
       ease: "easeOut",
       onUpdate: (value) => setDisplayCount(Math.round(value)),
     })
     return () => controls.stop()
-  }, [complete, reducedMotion, targetCount])
+  }, [complete, reducedMotion])
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -79,7 +69,7 @@ export function BlastRadiusControl({
           aria-live="polite"
         >
           {complete
-            ? `${rootCount} root gap${rootCount === 1 ? "" : "s"} → ${displayCount} affected concept${displayCount === 1 ? "" : "s"}`
+            ? `1 root gap → ${displayCount} affected concepts`
             : "Tracing dependencies…"}
         </span>
       )}

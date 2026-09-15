@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Check, ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -8,10 +8,17 @@ import { resolveConceptName } from "@/lib/conceptNames"
 import { conceptStatus, downstreamIdsFor, rootGapAffecting } from "@/lib/diagnosis"
 import type { DiagnoseResult, ErrorType, OptionKey, ReviewItem } from "@/lib/mockDiagnose"
 
+/** A request to open and scroll to the questions for one concept. */
+export interface ReviewFocusRequest {
+  conceptId: string
+  nonce: number
+}
+
 interface ReviewAnswersProps {
   reviewItems: ReviewItem[]
   diagnose: DiagnoseResult
   onSelectConcept?: (conceptId: string) => void
+  focusRequest?: ReviewFocusRequest | null
 }
 
 const DIAGNOSTIC_LABEL: Record<Exclude<ErrorType, null>, string> = {
@@ -58,8 +65,38 @@ function PromptText({ prompt }: { prompt: string }) {
   )
 }
 
-export function ReviewAnswers({ reviewItems, diagnose, onSelectConcept }: ReviewAnswersProps) {
+export function ReviewAnswers({
+  reviewItems,
+  diagnose,
+  onSelectConcept,
+  focusRequest,
+}: ReviewAnswersProps) {
   const incorrect = reviewItems.filter((item) => item.student_pick !== item.correct).length
+  const [openIndexes, setOpenIndexes] = useState<Set<number>>(new Set())
+  const reduceMotion = useReducedMotion()
+
+  // "Review related mistakes" opens that concept's questions and jumps to them.
+  useEffect(() => {
+    if (!focusRequest) return
+    const matches = reviewItems
+      .map((item, i) => (item.concept_id === focusRequest.conceptId ? i : -1))
+      .filter((i) => i >= 0)
+    if (matches.length === 0) return
+
+    setOpenIndexes((prev) => new Set([...prev, ...matches]))
+    document.getElementById(`review-q${matches[0] + 1}`)?.scrollIntoView({
+      block: "center",
+      behavior: reduceMotion ? "auto" : "smooth",
+    })
+  }, [focusRequest, reviewItems, reduceMotion])
+
+  const toggle = (index: number) =>
+    setOpenIndexes((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
 
   return (
     <section>
@@ -78,6 +115,8 @@ export function ReviewAnswers({ reviewItems, diagnose, onSelectConcept }: Review
             index={i}
             diagnose={diagnose}
             onSelectConcept={onSelectConcept}
+            open={openIndexes.has(i)}
+            onToggle={() => toggle(i)}
           />
         ))}
       </ol>
@@ -90,13 +129,16 @@ function ReviewCard({
   index,
   diagnose,
   onSelectConcept,
+  open,
+  onToggle,
 }: {
   item: ReviewItem
   index: number
   diagnose: DiagnoseResult
   onSelectConcept?: (conceptId: string) => void
+  open: boolean
+  onToggle: () => void
 }) {
-  const [open, setOpen] = useState(false)
   const reduceMotion = useReducedMotion()
 
   const isCorrect = item.student_pick === item.correct
@@ -108,7 +150,10 @@ function ReviewCard({
   const dependencyTargets = ownGap ? downstreamIdsFor(ownGap, diagnose) : []
 
   return (
-    <li className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+    <li
+      id={`review-q${index + 1}`}
+      className="scroll-mt-24 overflow-hidden rounded-md border border-border bg-card shadow-sm"
+    >
       <div className="p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-sm bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
@@ -166,7 +211,7 @@ function ReviewCard({
 
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={onToggle}
           aria-expanded={open}
           className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-primary transition-colors hover:text-primary/80"
         >

@@ -4,10 +4,7 @@ import { LogOut } from "lucide-react"
 
 import { diagnoseResult, reviewItems } from "@/lib/mockDiagnose"
 import { DiagnosticHero } from "@/components/results/diagnostic-hero"
-import { RootGapCards } from "@/components/results/root-gap-cards"
-import { RootGapMap } from "@/components/results/root-gap-map"
-import { ConceptMasteryPanel } from "@/components/results/concept-mastery-panel"
-import { ReviewAnswers } from "@/components/results/review-answers"
+import { DiagnosisWorkspace } from "@/components/results/diagnosis-workspace"
 
 export const metadata: Metadata = {
   title: "Diagnosis — MarkTrace",
@@ -45,13 +42,7 @@ export default function ResultsPage() {
       <div className="mx-auto max-w-6xl space-y-12 px-6 py-10 sm:px-8 lg:space-y-14 lg:py-12">
         <DiagnosticHero diagnose={diagnoseResult} />
 
-        <RootGapCards diagnose={diagnoseResult} />
-
-        <RootGapMap diagnose={diagnoseResult} />
-
-        <ConceptMasteryPanel diagnose={diagnoseResult} />
-
-        <ReviewAnswers reviewItems={reviewItems} diagnose={diagnoseResult} />
+        <DiagnosisWorkspace diagnose={diagnoseResult} reviewItems={reviewItems} />
       </div>
     </main>
   )
