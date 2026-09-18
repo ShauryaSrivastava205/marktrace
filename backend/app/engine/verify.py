@@ -1,116 +1,135 @@
-"""Verify: a targeted follow-up quiz that confirms or overturns a root-cause
-diagnosis from the engine, rather than inferring confidence from the original
-attempt's evidence alone (see stage5_confidence.py's module docstring).
+"""Targeted verification probes for a diagnosis.
 
-Each probe question targets one of three task types along the causal chain
-root -> downstream concept:
-  - direct: can the student do the root concept itself, in isolation?
-  - causal: do they understand how the root concept produces the downstream
-    behavior that was originally flagged as weak?
-  - transfer: can they apply the root concept in a novel context, without
-    the concept being named for them (see concept_hidden)?
-
-PROBE_BANK is a temporary hand-written mock; the real question bank is coming
-later from Vasu and will presumably be keyed by concept_id rather than
-hardcoded like this.
+Each root gap has a direct, causal, and transfer question. The data lives in
+data/verify_probes.json so the API never pretends every student has the same
+recursion diagnosis.
 """
+
+import json
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
 from .models import VerifyAnswer
 
-PROBE_BANK = {
-    "r_dir_01": {
-        "task_type": "direct",
-        "concept_id": "recursion",
-        "prompt": "int f(int n){ if(n<=1) return 1; return n*f(n-1); }  What is f(4)?",
-        "options": {"A": "24", "B": "12", "C": "4", "D": "1"},
-        "correct": "A",
-    },
-    "d_cau_01": {
-        "task_type": "causal",
-        "concept_id": "dp",
-        "prompt": "Which recurrence correctly defines the Fibonacci subproblem?",
-        "options": {
-            "A": "fib(n)=fib(n-1)+fib(n-2)",
-            "B": "fib(n)=fib(n-1)*fib(n-2)",
-            "C": "fib(n)=fib(n-1)+1",
-            "D": "fib(n)=n+fib(n-1)",
-        },
-        "correct": "A",
-    },
-    "r_trn_01": {
-        "task_type": "transfer",
-        "concept_id": "recursion",
-        "concept_hidden": True,
-        "prompt": "You must list every subset of {1,2,3}. Which approach naturally generates all of them?",
-        "options": {
-            "A": "For each element, branch on include/exclude and recurse",
-            "B": "Sort the array, then binary search",
-            "C": "One for-loop from 0 to n",
-            "D": "Swap adjacent pairs until sorted",
-        },
-        "correct": "A",
-    },
-}
+PROBE_PATH = Path(__file__).resolve().parents[3] / "data" / "verify_probes.json"
+REQUIRED_TASK_TYPES = {"direct", "causal", "transfer"}
 
 
-def grade(root_concept_id: str, downstream_concept_id: str, answers: list[VerifyAnswer]) -> dict:
-    """Grade a completed Verify quiz and apply the confirmation ladder.
+@lru_cache(maxsize=1)
+def _probe_groups() -> dict[str, dict[str, Any]]:
+    with PROBE_PATH.open() as source:
+        return json.load(source)["probes"]
 
-    The ladder is checked in order: a failed direct probe means the root
-    concept itself isn't solid, which takes priority over everything else.
-    Only once direct holds do causal and then transfer get to speak to
-    whether the original diagnosis is confirmed. Verification requires
-    positive evidence, so a task type with no matching answer is treated as
-    NOT passed — absence of evidence is not evidence of mastery.
-    """
+
+@lru_cache(maxsize=1)
+def _probe_bank() -> dict[str, dict[str, Any]]:
+    return {
+        question["question_id"]: question
+        for group in _probe_groups().values()
+        for question in group["questions"]
+    }
+
+
+def _group_for(root_concept_id: str, downstream_concept_id: str) -> dict[str, Any]:
+    group = _probe_groups().get(root_concept_id)
+    if group is None:
+        raise ValueError(f"No verification probes are available for '{root_concept_id}'.")
+    if group["downstream_concept_id"] != downstream_concept_id:
+        raise ValueError(
+            f"No verification probe connects '{root_concept_id}' to "
+            f"'{downstream_concept_id}'."
+        )
+    return group
+
+
+def get_probe(root_concept_id: str, downstream_concept_id: str) -> dict[str, Any]:
+    """Return a matching probe without leaking answer keys."""
+
+    group = _group_for(root_concept_id, downstream_concept_id)
+    questions = [
+        {key: value for key, value in question.items() if key != "correct"}
+        for question in group["questions"]
+    ]
+    return {
+        "root_concept_id": group["root_concept_id"],
+        "downstream_concept_id": group["downstream_concept_id"],
+        "questions": questions,
+    }
+
+
+def grade(
+    root_concept_id: str,
+    downstream_concept_id: str,
+    answers: list[VerifyAnswer],
+) -> dict[str, Any]:
+    """Grade one exact three-signal probe and produce an honest verdict."""
+
+    group = _group_for(root_concept_id, downstream_concept_id)
+    allowed_questions = {question["question_id"] for question in group["questions"]}
     signals: dict[str, dict[str, bool]] = {}
+
     for answer in answers:
-        probe = PROBE_BANK[answer.question_id]
-        signals[answer.task_type] = {"passed": answer.selected == probe["correct"]}
+        if answer.question_id not in allowed_questions:
+            raise ValueError("A verification answer does not belong to this probe.")
+        if answer.task_type in signals:
+            raise ValueError(f"More than one '{answer.task_type}' answer was supplied.")
 
-    direct_passed = signals.get("direct", {}).get("passed", False)
-    causal_passed = signals.get("causal", {}).get("passed", False)
-    transfer_passed = signals.get("transfer", {}).get("passed", False)
+        question = _probe_bank()[answer.question_id]
+        if answer.task_type != question["task_type"]:
+            raise ValueError("A verification answer has the wrong task type.")
+        if answer.selected not in question["options"]:
+            raise ValueError("A verification answer has an invalid option.")
 
-    rediagnose = None
+        signals[answer.task_type] = {"passed": answer.selected == question["correct"]}
+
+    if set(signals) != REQUIRED_TASK_TYPES:
+        raise ValueError("Exactly one direct, causal, and transfer answer is required.")
+
+    direct_passed = signals["direct"]["passed"]
+    causal_passed = signals["causal"]["passed"]
+    transfer_passed = signals["transfer"]["passed"]
 
     if not direct_passed:
         verdict = "root_not_solid"
         confidence = "LOW"
         diagnosis_confirmed = None
         message = (
-            f"{root_concept_id} itself isn't solid yet — the student missed a "
-            "direct question on it, so the diagnosis can't be verified until "
-            "that's addressed."
+            f"{root_concept_id} itself is not solid yet. The direct probe was missed, "
+            "so the diagnosis cannot be verified until that concept is addressed."
         )
+        rediagnose = None
     elif not causal_passed:
         verdict = "not_confirmed"
         confidence = "LOW"
         diagnosis_confirmed = False
-        rediagnose = {"focus_concept_id": downstream_concept_id}
         message = (
-            f"{root_concept_id} is solid, but the student couldn't connect it "
-            f"to {downstream_concept_id} — the original diagnosis isn't confirmed."
+            f"{root_concept_id} is solid, but its link to {downstream_concept_id} "
+            "was not demonstrated. The original diagnosis is not confirmed."
         )
+        rediagnose = {"focus_concept_id": downstream_concept_id}
     elif not transfer_passed:
         verdict = "confirmed"
         confidence = "MEDIUM"
         diagnosis_confirmed = True
         message = (
-            f"{root_concept_id} is confirmed as the root cause, though the "
-            "student struggled to transfer it to a novel context."
+            f"{root_concept_id} is confirmed as the root cause, but applying it "
+            "in a new context still needs practice."
         )
+        rediagnose = None
     else:
         verdict = "confirmed"
         confidence = "HIGH"
         diagnosis_confirmed = True
         message = (
-            f"{root_concept_id} is confirmed as the root cause, holding up "
-            "across direct, causal, and transfer probes."
+            f"{root_concept_id} is confirmed as the root cause across direct, "
+            "causal, and transfer evidence."
         )
+        rediagnose = None
 
-    result = {
+    result: dict[str, Any] = {
         "root_concept_id": root_concept_id,
+        "downstream_concept_id": downstream_concept_id,
         "signals": signals,
         "verdict": verdict,
         "confidence": confidence,

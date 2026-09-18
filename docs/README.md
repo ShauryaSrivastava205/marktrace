@@ -1,53 +1,67 @@
 # MarkTrace
 
-MarkTrace is a diagnostic learning tool. It runs students through a short
-diagnostic, maps wrong answers back to root concept gaps in a subject's
-concept graph, and reports which gaps are putting the most marks at risk
-downstream — rather than just marking individual questions right or wrong.
+MarkTrace is a diagnostic learning tool. It runs students through a short DSA
+diagnostic, maps conceptual mistakes back to root gaps in a concept graph, and
+shows which dependent topics and marks are affected.
+
+## What works today
+
+- POST /diagnose runs the six-stage root-cause engine on a student's answers.
+- POST /verify/probe returns a matching three-signal probe for a supported
+  root-gap pair (currently Recursion to Dynamic Programming and Graphs to BFS).
+- POST /verify/grade grades that exact probe without exposing answer keys.
+- GET /health is a deployment liveness check.
+
+The frontend currently has the quiz and results experience. Its final task is
+to call these real endpoints rather than its temporary mock data.
 
 ## Repo layout
 
-```
-frontend/   Next.js (TypeScript) app — student/teacher UI
-backend/    FastAPI app — diagnostic API
-data/       Concept graphs and question banks (content, not code)
-docs/       Project docs (this file, API contract, git workflow)
-```
+~~~
+frontend/   Next.js (TypeScript) student UI
+backend/    FastAPI diagnostic and verification API
+data/       DSA concept graph, question bank, and verification probes
+docs/       API contract and contribution workflow
+~~~
 
-The backend currently only exposes `GET /health`. The frontend's `/dashboard`
-page calls it and shows the result, to confirm the two sides can talk. See
-[API_CONTRACT.md](./API_CONTRACT.md) for the target API shape as real
-endpoints get built.
+## Run locally
 
-## Running the backend
+### Backend
 
-```bash
+~~~bash
 cd backend
-python3 -m venv venv          # first time only
+python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
-```
+~~~
 
-Health check: `curl http://localhost:8000/health` → `{"status":"ok"}`
+The API allows http://localhost:3000 by default. For a deployed frontend, set
+MARKTRACE_CORS_ORIGINS to a comma-separated list of trusted origins:
 
-## Running the frontend
+~~~bash
+export MARKTRACE_CORS_ORIGINS="http://localhost:3000,https://your-app.vercel.app"
+~~~
 
-The frontend uses pnpm (pinned via `packageManager` in `frontend/package.json`).
+Run backend checks:
 
-```bash
+~~~bash
+cd backend
+python -m unittest discover -s tests
+~~~
+
+### Frontend
+
+~~~bash
 cd frontend
-corepack enable                # first time only, if pnpm isn't installed
+corepack enable
 pnpm install
-cp .env.example .env.local     # sets NEXT_PUBLIC_API_URL=http://localhost:8000
+cp .env.example .env.local
 pnpm dev
-```
+~~~
 
-Open http://localhost:3000/dashboard (or log in from http://localhost:3000) —
-the backend status line at the bottom of the dashboard confirms the fetch to
-`/health` succeeded. Run the backend first (or alongside it) so the fetch
-succeeds.
+## MVP scope
 
-## Contributing
-
-See [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) for branching and PR conventions.
+The submission MVP is a guest student flow: quiz to diagnosis to personalised
+study plan to optional verification. Authentication, class analytics, and
+long-term progress tracking are post-MVP work.
