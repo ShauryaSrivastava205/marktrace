@@ -1,164 +1,72 @@
-# API Contract
+# MarkTrace API contract
 
-This document specifies the HTTP API shared between the MarkTrace frontend and
-backend. It describes the target shape of the API — most of these endpoints
-are not implemented yet in the current skeleton (only `GET /health` exists so
-far). Update this file whenever a request/response shape changes.
+All requests and responses use JSON. The frontend should use the real
+endpoints below; it must not display a fixed diagnosis or verification result.
 
-All request and response bodies are JSON unless noted otherwise.
+## GET /health
 
-## `GET /health`
-
-Liveness check used by the frontend and deploy tooling.
-
-**Response**
-
-```json
+~~~json
 { "status": "ok" }
-```
+~~~
 
-## `GET /subjects`
+## POST /diagnose
 
-List the available subjects.
+Submit the already-graded answers from the question bank. Wrong answers must
+carry their tagged error_type; conceptual and procedural errors count as gap
+evidence, while careless and implementation errors remain neutral.
 
-**Response**
+### Request
 
-```json
-[
-  { "id": "string", "name": "string" }
-]
-```
-
-## `GET /subjects/{id}/graph`
-
-Return the concept graph for a subject.
-
-**Response**
-
-```json
+~~~json
 {
-  "nodes": [
-    { "id": "string", "label": "string", "level": "number" }
-  ],
-  "edges": [
-    { "from": "string", "to": "string" }
-  ]
-}
-```
-
-## `GET /subjects/{id}/diagnostic`
-
-Start a diagnostic session for a subject and return its questions.
-
-**Response**
-
-```json
-{
-  "session_id": "string",
-  "questions": [
-    {
-      "id": "string",
-      "text": "string",
-      "concept_ids": ["string"],
-      "options": ["string"]
-    }
-  ]
-}
-```
-
-## `POST /diagnose`
-
-Submit answers for a diagnostic session and receive the diagnosis.
-
-**Request**
-
-```json
-{
-  "session_id": "string",
+  "student_id": "demo_student",
   "answers": [
-    { "question_id": "string", "chosen": "string" }
-  ]
-}
-```
-
-**Response**
-
-```json
-{
-  "session_id": "string",
-  "evidence_sufficient": "boolean",
-  "concept_mastery": [
-    { "concept_id": "string", "name": "string", "mastery": "number", "status": "string" }
-  ],
-  "root_gaps": [
     {
-      "concept_id": "string",
-      "name": "string",
-      "confidence": "number",
-      "marks_associated": "number",
-      "downstream_affected": ["string"]
-    }
-  ],
-  "blast_radius": {
-    "root_concept_id": "string",
-    "unlocked_concepts": ["string"]
-  },
-  "forecast": {
-    "marks_at_risk": "number",
-    "by_concept": [
-      { "concept_id": "string", "marks_at_risk": "number" }
-    ]
-  },
-  "explanation": "string"
-}
-```
-
-## `GET /verify/{session_id}`
-
-Return two unseen questions targeting the identified root concept, to confirm
-or refute a diagnosed gap.
-
-**Response**
-
-```json
-{
-  "session_id": "string",
-  "questions": [
-    {
-      "id": "string",
-      "text": "string",
-      "concept_ids": ["string"],
-      "options": ["string"]
+      "question_id": "rec_01",
+      "concept_ids": ["recursion"],
+      "correct": false,
+      "error_type": "conceptual",
+      "marks": 5
     }
   ]
 }
-```
+~~~
 
-## `POST /verify`
+### Response fields
 
-Submit answers to the verification questions.
+- concept_mastery: scored concepts with mastery (0 to 1 or null) and status.
+- root_gaps: most parsimonious gaps, their confidence tier, affected marks,
+  questions, and downstream concepts.
+- blast_radius: dependent concepts of the strongest root gap, or null.
+- forecast: currently null because future exam weightage is not yet data-backed.
 
-**Request**
+## POST /verify/probe
 
-```json
+Request the three unseen questions for one supported causal pair.
+
+~~~json
+{ "root_concept_id": "recursion", "downstream_concept_id": "dp" }
+~~~
+
+The response contains direct, causal, and transfer questions, but never
+contains the correct options. An unsupported pair returns HTTP 404.
+
+## POST /verify/grade
+
+Submit exactly one answer for each task type.
+
+~~~json
 {
-  "session_id": "string",
+  "student_id": "demo_student",
+  "root_concept_id": "recursion",
+  "downstream_concept_id": "dp",
   "answers": [
-    { "question_id": "string", "chosen": "string" }
+    { "question_id": "r_dir_p1", "task_type": "direct", "selected": "A" },
+    { "question_id": "d_cau_p1", "task_type": "causal", "selected": "A" },
+    { "question_id": "r_trn_p1", "task_type": "transfer", "selected": "A" }
   ]
 }
-```
+~~~
 
-**Response**
-
-```json
-{
-  "gap_closing": "boolean",
-  "new_confidence": "number"
-}
-```
-
-## `GET /class/{class_id}/gapmap`
-
-Teacher-facing aggregate view across a class. **Build later** — shape not
-finalized.
+The response reports a verdict, confidence tier, per-signal evidence, and a
+re-diagnosis focus only when the causal link is not confirmed.
