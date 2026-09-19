@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { motion, useAnimation, useReducedMotion, AnimatePresence } from "motion/react"
 
-import { mockSignup } from "@/lib/auth"
+import { mockSignup, storeAuthUser } from "@/lib/auth"
 import { scorePasswordStrength } from "@/lib/password-strength"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -115,6 +115,7 @@ export function SignupForm() {
       return
     }
 
+    storeAuthUser({ name: fullName.trim(), email })
     setIsSuccess(true)
     setTimeout(() => router.push("/dashboard"), reduceMotion ? 200 : 650)
   }
