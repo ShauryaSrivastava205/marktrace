@@ -1,9 +1,12 @@
 "use client"
 
+import Link from "next/link"
 import { motion, useReducedMotion } from "motion/react"
+import { ShieldCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { resolveConceptName } from "@/lib/conceptNames"
 import { downstreamIdsFor, masteryPercent } from "@/lib/diagnosis"
+import { verifyHref } from "@/lib/verify"
 import type { DiagnoseResult, RootGapConfidence } from "@/lib/mockDiagnose"
 import { MasteryMeter } from "./status"
 
@@ -13,6 +16,7 @@ interface RootGapCardsProps {
 }
 
 const CONFIDENCE_STYLE: Record<RootGapConfidence, string> = {
+  INSUFFICIENT: "bg-muted text-muted-foreground",
   LOW: "bg-muted text-muted-foreground",
   MEDIUM: "bg-amber-500/15 text-amber-700",
   HIGH: "bg-destructive/12 text-destructive",
@@ -108,15 +112,25 @@ export function RootGapCards({ diagnose, onSelectConcept }: RootGapCardsProps) {
                   )}
                 </dl>
 
-                {onSelectConcept && (
-                  <button
-                    type="button"
-                    onClick={() => onSelectConcept(gap.concept_id)}
-                    className="mt-4 text-[13px] font-medium text-primary underline-offset-4 transition-colors hover:underline"
+                <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-4">
+                  <Link
+                    href={verifyHref(gap)}
+                    className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
-                    Show in graph
-                  </button>
-                )}
+                    <ShieldCheck className="size-3.5" aria-hidden="true" />
+                    Verify this gap
+                  </Link>
+
+                  {onSelectConcept && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectConcept(gap.concept_id)}
+                      className="text-[13px] font-medium text-primary underline-offset-4 transition-colors hover:underline"
+                    >
+                      Show in graph
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.article>
           )

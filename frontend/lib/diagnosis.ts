@@ -41,7 +41,9 @@ export function rootGapIds(d: DiagnoseResult): string[] {
 export function downstreamIdsFor(gap: RootGap, d: DiagnoseResult): string[] {
   const own = gap.downstream_affected.filter((id) => id !== gap.concept_id)
   const unlocked =
-    gap.concept_id === d.blast_radius.root_concept_id ? d.blast_radius.unlocked_concepts : []
+    d.blast_radius && gap.concept_id === d.blast_radius.root_concept_id
+      ? d.blast_radius.unlocked_concepts
+      : []
   return Array.from(new Set([...own, ...unlocked]))
 }
 

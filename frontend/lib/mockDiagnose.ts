@@ -1,6 +1,9 @@
-// Mock data standing in for the future `/diagnose` API response and the
-// per-question review it's paired with. Shapes mirror the real payload so
-// the UI can be swapped over to a live fetch later without changes here.
+// Types for the POST /diagnose response, plus a dev fallback copy of one.
+//
+// The types are the real contract: they were checked against the deployed
+// API (backend/app/engine/diagnose.py) and are what lib/api.ts returns.
+// `diagnoseResult` and `reviewItems` below are a stand-in used only when no
+// live response has been stored - see lib/api.ts and app/results/page.tsx.
 
 export type ConceptStatus = "ok" | "weak" | "insufficient"
 
@@ -12,7 +15,8 @@ export interface ConceptMasteryItem {
   status: ConceptStatus
 }
 
-export type RootGapConfidence = "LOW" | "MEDIUM" | "HIGH"
+/** Stage 5 emits INSUFFICIENT when a root has too little supporting evidence. */
+export type RootGapConfidence = "INSUFFICIENT" | "LOW" | "MEDIUM" | "HIGH"
 
 export interface RootGap {
   concept_id: string
@@ -33,7 +37,8 @@ export interface DiagnoseResult {
   evidence_sufficient: boolean
   concept_mastery: ConceptMasteryItem[]
   root_gaps: RootGap[]
-  blast_radius: BlastRadius
+  /** null when the engine found no root gap to measure a blast radius from. */
+  blast_radius: BlastRadius | null
   explanation: string
   forecast: unknown | null
 }

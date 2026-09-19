@@ -1,6 +1,8 @@
-// Mock data standing in for the future `/verify` probe and `/grade` response.
-// Shapes mirror the planned payload so the UI can be swapped over to a live
-// fetch later without changes here.
+// Types for POST /verify/probe and POST /verify/grade, plus dev fallback data.
+//
+// The types are the real contract, checked against the deployed API
+// (backend/app/engine/verify.py). `verifyProbe` and `gradeOutcomes` below are
+// only used when the API cannot be reached - see lib/api.ts.
 
 import type { OptionKey, RootGapConfidence } from "./mockDiagnose"
 
@@ -22,6 +24,7 @@ export interface ProbeQuestion {
 
 export interface VerifyProbe {
   root_concept_id: string
+  downstream_concept_id: string
   questions: ProbeQuestion[]
 }
 
@@ -29,7 +32,13 @@ export interface Signal {
   passed: boolean
 }
 
-export type Verdict = "confirmed" | "not_confirmed"
+/**
+ * Four outcomes, not two:
+ *  - confirmed      - direct and causal both passed
+ *  - not_confirmed  - the root is solid but the causal link was not shown
+ *  - root_not_solid - the direct probe was missed, so nothing can be concluded
+ */
+export type Verdict = "confirmed" | "not_confirmed" | "root_not_solid"
 
 export interface Rediagnose {
   focus_concept_id: string
@@ -37,12 +46,14 @@ export interface Rediagnose {
 
 export interface GradeResult {
   root_concept_id: string
+  downstream_concept_id: string
   /** Partial by design: the grader only reports signals it actually probed. */
   signals: Partial<Record<TaskType, Signal>>
   verdict: Verdict
   /** A tier, never a percentage. */
   confidence: RootGapConfidence
-  diagnosis_confirmed: boolean
+  /** null when the probe could not settle the question either way. */
+  diagnosis_confirmed: boolean | null
   message: string
   /** Only present when the diagnosis was not confirmed. */
   rediagnose?: Rediagnose
@@ -50,6 +61,7 @@ export interface GradeResult {
 
 export const verifyProbe: VerifyProbe = {
   root_concept_id: "recursion",
+  downstream_concept_id: "dp",
   questions: [
     {
       question_id: "r_dir_p1",
@@ -92,11 +104,16 @@ export const verifyProbe: VerifyProbe = {
   ],
 }
 
-export type GradeOutcomeKey = "confirmed_high" | "confirmed_medium" | "not_confirmed"
+export type GradeOutcomeKey =
+  | "confirmed_high"
+  | "confirmed_medium"
+  | "not_confirmed"
+  | "root_not_solid"
 
 export const gradeOutcomes: Record<GradeOutcomeKey, GradeResult> = {
   confirmed_high: {
     root_concept_id: "recursion",
+    downstream_concept_id: "dp",
     signals: {
       direct: { passed: true },
       causal: { passed: true },
@@ -110,6 +127,7 @@ export const gradeOutcomes: Record<GradeOutcomeKey, GradeResult> = {
   },
   confirmed_medium: {
     root_concept_id: "recursion",
+    downstream_concept_id: "dp",
     signals: {
       direct: { passed: true },
       causal: { passed: true },
@@ -123,6 +141,7 @@ export const gradeOutcomes: Record<GradeOutcomeKey, GradeResult> = {
   },
   not_confirmed: {
     root_concept_id: "recursion",
+    downstream_concept_id: "dp",
     signals: {
       direct: { passed: true },
       causal: { passed: false },
@@ -135,10 +154,25 @@ export const gradeOutcomes: Record<GradeOutcomeKey, GradeResult> = {
       "Your recursion is now solid — a real gain that underpins 8 other topics. But your DP gap isn't explained by recursion after all, so its true cause is elsewhere.",
     rediagnose: { focus_concept_id: "dp" },
   },
+  root_not_solid: {
+    root_concept_id: "recursion",
+    downstream_concept_id: "dp",
+    signals: {
+      direct: { passed: false },
+      causal: { passed: true },
+      transfer: { passed: true },
+    },
+    verdict: "root_not_solid",
+    confidence: "LOW",
+    diagnosis_confirmed: null,
+    message:
+      "recursion itself is not solid yet. The direct probe was missed, so the diagnosis cannot be verified until that concept is addressed.",
+  },
 }
 
 export const GRADE_OUTCOME_KEYS: GradeOutcomeKey[] = [
   "confirmed_high",
   "confirmed_medium",
   "not_confirmed",
+  "root_not_solid",
 ]

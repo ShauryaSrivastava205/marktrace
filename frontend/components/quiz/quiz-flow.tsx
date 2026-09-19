@@ -2,13 +2,16 @@
 
 import { useCallback, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { motion, useReducedMotion } from "motion/react"
 import { ArrowLeft, ArrowRight, Send } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { OptionKey } from "@/lib/mockDiagnose"
 import type { BankQuestion } from "@/lib/questionBank"
-import { buildAttempt, submitAttempt, type Picks } from "@/lib/attempt"
+import { buildAttempt, DEMO_STUDENT_ID, type Attempt, type Picks } from "@/lib/attempt"
+import { postDiagnose, ApiError } from "@/lib/api"
+import { storeSession } from "@/lib/session"
+import { LoadingState, ErrorState } from "@/components/api-state"
 import { QuizProgress } from "./quiz-progress"
 import { QuestionCard } from "./question-card"
 
@@ -27,6 +30,7 @@ export function QuizFlow({ questions, conceptNames }: QuizFlowProps) {
   // Which way the next card should come from, so Back reads as going back.
   const [direction, setDirection] = useState(1)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const total = questions.length
   const question = questions[index]
@@ -60,33 +64,70 @@ export function QuizFlow({ questions, conceptNames }: QuizFlowProps) {
     [question.question_id],
   )
 
+  const runDiagnosis = useCallback(
+    async (attempt: Attempt) => {
+      setSubmitting(true)
+      setError(null)
+      try {
+        const diagnose = await postDiagnose(attempt)
+        storeSession({ attempt, diagnose, picks })
+        router.push("/results")
+      } catch (cause) {
+        // Staying on the quiz keeps every answer intact for the retry.
+        setError(
+          cause instanceof ApiError
+            ? cause.message
+            : "Something went wrong while sending your answers.",
+        )
+        setSubmitting(false)
+      }
+    },
+    [picks, router],
+  )
+
   const handleSubmit = useCallback(() => {
     if (!complete || submitting) return
-    setSubmitting(true)
-
     // Graded against the bank here, never during the quiz.
-    const attempt = buildAttempt(
-      questions.map((q) => q.question_id),
-      picks,
+    void runDiagnosis(
+      buildAttempt(
+        questions.map((q) => q.question_id),
+        picks,
+        DEMO_STUDENT_ID,
+      ),
     )
+  }, [complete, submitting, questions, picks, runDiagnosis])
 
-    submitAttempt(attempt)
-    router.push("/results")
-  }, [complete, submitting, questions, picks, router])
-
+  // Enter-only, and deliberately so. An exit animation here has to finish
+  // before the next card can mount, and if it ever fails to report completion
+  // the quiz stops advancing while the progress header keeps counting up -
+  // the card is the question, so it must never depend on an animation ending.
   const slide = {
-    initial: reduceMotion ? undefined : { opacity: 0, x: direction * 24 },
-    animate: { opacity: 1, x: 0, pointerEvents: "auto" as const },
-    // The outgoing card is still mounted while it fades. Without this, a click
-    // landing in that window would answer the question being navigated away from.
-    exit: reduceMotion
-      ? { pointerEvents: "none" as const }
-      : { opacity: 0, x: direction * -24, pointerEvents: "none" as const },
+    initial: reduceMotion ? false : { opacity: 0, x: direction * 24 },
+    animate: { opacity: 1, x: 0 },
     transition: { duration: 0.28, ease: "easeOut" as const },
+  }
+
+  if (submitting) {
+    return (
+      <LoadingState
+        title="Analyzing your answers…"
+        detail="Tracing each mistake back through the concept graph to find what actually caused it."
+      />
+    )
   }
 
   return (
     <div>
+      {error && (
+        <ErrorState
+          className="mb-6"
+          title="We could not analyze your answers"
+          message={`${error} Your answers are safe — nothing was lost.`}
+          onRetry={handleSubmit}
+          retryLabel="Retry diagnosis"
+        />
+      )}
+
       <QuizProgress
         current={index}
         total={total}
@@ -95,17 +136,17 @@ export function QuizFlow({ questions, conceptNames }: QuizFlowProps) {
       />
 
       <div className="mt-5">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div key={question.question_id} {...slide}>
-            <QuestionCard
-              question={question}
-              index={index}
-              conceptName={conceptNames[question.concept_id] ?? question.concept_id}
-              picked={picks[question.question_id]}
-              onPick={handlePick}
-            />
-          </motion.div>
-        </AnimatePresence>
+        {/* Keyed on the question, so changing question remounts the card and
+            animates the new one in. Exactly one card is mounted at any time. */}
+        <motion.div key={question.question_id} {...slide}>
+          <QuestionCard
+            question={question}
+            index={index}
+            conceptName={conceptNames[question.concept_id] ?? question.concept_id}
+            picked={picks[question.question_id]}
+            onPick={handlePick}
+          />
+        </motion.div>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-border pt-5">
