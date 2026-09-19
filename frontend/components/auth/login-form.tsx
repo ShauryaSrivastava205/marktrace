@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Eye, EyeOff, Loader2, Mail, ArrowRight } from "lucide-react"
 import { motion, useReducedMotion, AnimatePresence } from "motion/react"
 
-import { mockLogin } from "@/lib/auth"
+import { mockLogin, storeLoggedInUser } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -35,6 +35,7 @@ export function LoginForm() {
       return
     }
 
+    storeLoggedInUser(email)
     router.push("/dashboard")
   }
 
