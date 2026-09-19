@@ -12,8 +12,8 @@ import { RediagnoseCallout } from "./rediagnose-callout"
 
 interface VerdictViewProps {
   result: GradeResult
-  /** The tier the diagnosis carried in, read off the diagnosis payload. */
-  previousConfidence: RootGapConfidence
+  /** The tier the diagnosis carried in, or null when it is not known. */
+  previousConfidence: RootGapConfidence | null
   rootName: string
   /** Display name for `rediagnose.focus_concept_id`, when there is one. */
   focusName: string | null
@@ -27,6 +27,23 @@ export function VerdictView({
 }: VerdictViewProps) {
   const reduceMotion = useReducedMotion()
   const confirmed = result.verdict === "confirmed"
+  // The direct probe failing is not a verdict about the diagnosis - it means the
+  // probe could not test it yet. It reads as unfinished, never as a failure.
+  const rootNotSolid = result.verdict === "root_not_solid"
+
+  const headline = confirmed
+    ? `${rootName} is confirmed as your root gap`
+    : rootNotSolid
+      ? `${rootName} needs more work before this can be settled`
+      : `${rootName} is solid — but it isn't the cause`
+
+  const verdictLabel = confirmed
+    ? "Confirmed"
+    : rootNotSolid
+      ? "Not settled yet"
+      : "Cause elsewhere"
+
+  const neutralTone = rootNotSolid
 
   const step = (delay: number) => ({
     initial: reduceMotion ? undefined : { opacity: 0, y: 12 },
@@ -49,7 +66,7 @@ export function VerdictView({
               confirmed ? "text-accent" : "text-primary",
             )}
           >
-            Verification complete
+            {rootNotSolid ? "Verification inconclusive" : "Verification complete"}
           </p>
         </motion.div>
 
@@ -57,9 +74,7 @@ export function VerdictView({
           {...step(0.08)}
           className="mt-2 max-w-3xl font-serif text-[1.75rem] font-semibold leading-[1.15] text-foreground sm:text-4xl"
         >
-          {confirmed
-            ? `${rootName} is confirmed as your root gap`
-            : `${rootName} is solid — but it isn't the cause`}
+          {headline}
         </motion.h1>
 
         <motion.div
@@ -79,19 +94,23 @@ export function VerdictView({
             <span
               className={cn(
                 "mt-2 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.1em]",
-                confirmed
-                  ? "border-accent/45 bg-accent/[0.08] text-accent"
-                  : "border-destructive/35 bg-destructive/[0.05] text-destructive",
+                confirmed && "border-accent/45 bg-accent/[0.08] text-accent",
+                neutralTone && "border-border bg-muted text-muted-foreground",
+                !confirmed &&
+                  !neutralTone &&
+                  "border-destructive/35 bg-destructive/[0.05] text-destructive",
               )}
             >
               <span
                 aria-hidden="true"
                 className={cn(
                   "size-1.5 rounded-full",
-                  confirmed ? "bg-accent" : "bg-destructive",
+                  confirmed && "bg-accent",
+                  neutralTone && "bg-muted-foreground/50",
+                  !confirmed && !neutralTone && "bg-destructive",
                 )}
               />
-              {confirmed ? "Confirmed" : "Cause elsewhere"}
+              {verdictLabel}
             </span>
           </div>
         </motion.div>

@@ -23,9 +23,6 @@ export type Picks = Record<string, OptionKey>
 
 export const DEMO_STUDENT_ID = "demo_student"
 
-/** Where the quiz hands the attempt to the results route. */
-export const ATTEMPT_STORAGE_KEY = "marktrace.attempt"
-
 /**
  * Grades each pick against the bank. Correctness and error_type are read off the
  * picked option itself — no answer key is duplicated here, so the payload cannot
@@ -61,42 +58,4 @@ export function buildAttempt(
   })
 
   return { student_id: studentId, answers }
-}
-
-/** Hands the attempt to the results route. Storage can be unavailable; that is not fatal. */
-export function storeAttempt(attempt: Attempt): void {
-  try {
-    sessionStorage.setItem(ATTEMPT_STORAGE_KEY, JSON.stringify(attempt))
-  } catch {
-    // Private mode or blocked storage — the results route falls back to the mock.
-  }
-}
-
-export function readStoredAttempt(): Attempt | null {
-  try {
-    const raw = sessionStorage.getItem(ATTEMPT_STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Attempt) : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * TODO(diagnose-api): wire this to the live backend.
- *
- *   const res = await fetch("https://marktrace.onrender.com/diagnose", {
- *     method: "POST",
- *     headers: { "Content-Type": "application/json" },
- *     body: JSON.stringify(attempt),
- *   })
- *   const diagnose: DiagnoseResult = await res.json()
- *
- * `attempt` is already the exact request body the endpoint expects, so this is the
- * only place that changes. The results route reads the mock until then.
- * Until it is wired, submitting only stores the attempt and navigates.
- */
-export function submitAttempt(attempt: Attempt): void {
-  // Visible proof of the payload shape while the endpoint is still mock-backed.
-  console.log("[marktrace] POST /diagnose payload", attempt)
-  storeAttempt(attempt)
 }

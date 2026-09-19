@@ -134,12 +134,13 @@ function GraphCanvas({
     }
   }, [])
 
-  const blastRootId = diagnose.blast_radius.root_concept_id
+  // No root gap means no blast radius; the sequence below then stays empty.
+  const blastRootId = diagnose.blast_radius?.root_concept_id ?? null
   const blastSequence = useMemo(
     () => model.edges.filter((e) => e.source === blastRootId),
     [model.edges, blastRootId],
   )
-  const blastTotal = diagnose.blast_radius.unlocked_concepts.length
+  const blastTotal = diagnose.blast_radius?.unlocked_concepts.length ?? 0
 
   const runBlast = useCallback(() => {
     timeouts.current.forEach(clearTimeout)
@@ -149,11 +150,16 @@ function GraphCanvas({
     setBlastActive(true)
     setBlastComplete(false)
     setBlastEdgeIds(new Set())
-    setBlastNodeIds(new Set([blastRootId]))
+    setBlastNodeIds(new Set(blastRootId ? [blastRootId] : []))
 
     if (reduceMotion) {
       setBlastEdgeIds(new Set(blastSequence.map((e) => e.id)))
-      setBlastNodeIds(new Set([blastRootId, ...blastSequence.map((e) => e.target)]))
+      setBlastNodeIds(
+        new Set([
+          ...(blastRootId ? [blastRootId] : []),
+          ...blastSequence.map((e) => e.target),
+        ]),
+      )
       setBlastComplete(true)
       return
     }
