@@ -1,0 +1,33 @@
+{
+  "_meta": {
+    "purpose": "Maps Codeforces problem tags -> MarkTrace concept-graph node ids. Finalized against dsa_concept_graph.json v2.0 (43 nodes).",
+    "design_rule": "Map each CF tag to the MOST SPECIFIC concept it represents. Do NOT inject upstream concepts (e.g. recursion). The engine's graph traversal (stage3 = weak concepts + their conceptual ancestors) already surfaces the upstream root. That is the whole point of the concept graph - let it do the tracing.",
+    "no_recursion_tag_note": "Codeforces has NO 'recursion' tag. Recursion weakness is inferred by the engine: weak dp / divide_conquer / dfs all have 'recursion' as a CONCEPTUAL ancestor in your graph, so the engine promotes recursion to a candidate root on its own. Trust the graph, don't force it here.",
+    "verified": "Every concept id below was checked to exist as a node in dsa_concept_graph.json v2.0.",
+    "deleted_because_no_node": "number theory, math, combinatorics, bitmasks (no bit_manipulation node), data structures (too broad -> noise), linked list (not a real CF tag). These CF tags now correctly contribute NO signal.",
+    "watch": "'sortings' -> basic_sorting is the loosest mapping (CF sorting problems are about USING order, not bubble/selection). Revisit if diagnoses over-blame basic_sorting."
+  },
+  "confirmed": {
+    "binary search":      ["binary_search"],
+    "dp":                 ["dp"],
+    "graphs":             ["graph"],
+    "dfs and similar":    ["dfs"],
+    "shortest paths":     ["shortest_path"],
+    "trees":              ["trees"],
+    "sortings":           ["basic_sorting"],
+    "strings":            ["strings"],
+    "hashing":            ["hashing"],
+    "two pointers":       ["two_pointers"],
+    "greedy":             ["greedy"],
+    "divide and conquer": ["divide_conquer"],
+    "dsu":                ["dsu"]
+  },
+  "deliberately_unmapped": [
+    "implementation", "brute force", "constructive algorithms", "*special",
+    "number theory", "math", "combinatorics", "bitmasks", "data structures",
+    "geometry", "fft", "flows", "2-sat", "graph matchings", "matrices",
+    "meet-in-the-middle", "string suffix structures", "ternary search",
+    "expression parsing", "schedules", "interactive", "probabilities",
+    "games", "chinese remainder theorem"
+  ]
+}
