@@ -7,10 +7,13 @@ reach Gemini falls back to a safe, factual restatement of the data instead
 of a 500.
 """
 
+import logging
 import os
 from typing import Optional
 
 from .engine.models import CoachRequest, RootGap
+
+logger = logging.getLogger("marktrace.coach")
 
 MODEL_NAME = "gemini-1.5-flash"
 REQUEST_TIMEOUT_SECONDS = 15
@@ -80,4 +83,5 @@ def coach(request: CoachRequest) -> dict:
         text = (response.text or "").strip()
         return {"coaching": text or _fallback(request)}
     except Exception:
+        logger.exception("Gemini coach call failed")
         return {"coaching": _fallback(request)}
