@@ -210,26 +210,99 @@ def fake_response(status_code, body):
 
 
 class ApiErrorTests(unittest.TestCase):
-    def test_missing_handle_raises_a_clear_error_with_the_codeforces_comment(self):
+    def setUp(self) -> None:
+        patcher = mock.patch.object(cf, "_sleep")
+        self.sleep = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_missing_handle_raises_a_clear_error_and_is_not_retried(self):
         body = {"status": "FAILED", "comment": "handle: User ghost_handle not found"}
-        with mock.patch.object(cf.requests, "get", return_value=fake_response(400, body)):
+        with mock.patch.object(cf.requests, "get", return_value=fake_response(400, body)) as get:
             with self.assertRaises(cf.HandleNotFoundError) as caught:
                 cf.fetch_rating_history("ghost_handle")
         self.assertIn("ghost_handle not found", str(caught.exception))
+        self.assertEqual(get.call_count, 1)
 
-    def test_other_http_errors_keep_the_codeforces_comment(self):
+    def test_definitive_failures_keep_the_codeforces_comment_and_are_not_retried(self):
+        body = {"status": "FAILED", "comment": "handle: Field should contain between 3 and 24 characters"}
+        with mock.patch.object(cf.requests, "get", return_value=fake_response(400, body)) as get:
+            with self.assertRaises(cf.CodeforcesError) as caught:
+                cf.fetch_submissions("ab")
+        self.assertNotIsInstance(caught.exception, cf.HandleNotFoundError)
+        self.assertIn("between 3 and 24", str(caught.exception))
+        self.assertEqual(get.call_count, 1)
+
+    def test_call_limit_is_retried_then_reported_with_its_comment(self):
         body = {"status": "FAILED", "comment": "Call limit exceeded"}
-        with mock.patch.object(cf.requests, "get", return_value=fake_response(503, body)):
+        with mock.patch.object(cf.requests, "get", return_value=fake_response(503, body)) as get:
             with self.assertRaises(cf.CodeforcesError) as caught:
                 cf.fetch_submissions("someone")
-        self.assertNotIsInstance(caught.exception, cf.HandleNotFoundError)
+        self.assertEqual(get.call_count, cf.RETRY_ATTEMPTS)
         self.assertIn("Call limit exceeded", str(caught.exception))
+        self.assertIn(f"after {cf.RETRY_ATTEMPTS} attempts", str(caught.exception))
+        self.assertEqual([c.args[0] for c in self.sleep.call_args_list], [2.0, 4.0, 8.0])
 
-    def test_non_json_error_falls_back_to_the_http_status(self):
+    def test_a_connection_reset_is_retried_and_recovers(self):
+        ok = fake_response(200, {"status": "OK", "result": [1, 2]})
+        flaky = [cf.requests.ConnectionError("Connection reset by peer")] * 2 + [ok]
+        with mock.patch.object(cf.requests, "get", side_effect=flaky) as get:
+            self.assertEqual(cf.fetch_submissions("someone"), [1, 2])
+        self.assertEqual(get.call_count, 3)
+
+    def test_persistent_network_failure_is_wrapped_as_codeforces_error(self):
+        boom = cf.requests.Timeout("timed out")
+        with mock.patch.object(cf.requests, "get", side_effect=boom):
+            with self.assertRaises(cf.CodeforcesError) as caught:
+                cf.fetch_submissions("someone")
+        self.assertIn("network error", str(caught.exception))
+
+    def test_non_json_gateway_error_falls_back_to_the_http_status(self):
         with mock.patch.object(cf.requests, "get", return_value=fake_response(502, ValueError())):
             with self.assertRaises(cf.CodeforcesError) as caught:
                 cf.fetch_submissions("someone")
         self.assertIn("502", str(caught.exception))
+
+
+class TrajectoryTests(unittest.TestCase):
+    def collect(self, fake: FakeSubmissions, history=HISTORY):
+        return cf.collect_trajectories(list(reversed(fake.subs)), history)  # API order: newest first
+
+    def test_wrong_tries_count_only_failures_before_the_first_accept(self):
+        fake = FakeSubmissions()
+        fake.problem(1200, ["dp"], ["WRONG_ANSWER", "TIME_LIMIT_EXCEEDED", "OK", "WRONG_ANSWER"], ts(2023, 8))
+        (t,), _ = self.collect(fake)
+        self.assertEqual((t["wrong_tries"], t["attempts"], t["solved"]), (2, 4, True))
+
+    def test_an_unsolved_problem_keeps_all_its_failures(self):
+        fake = FakeSubmissions()
+        fake.problem(1200, ["dp"], ["WRONG_ANSWER"] * 3, ts(2023, 8))
+        (t,), _ = self.collect(fake)
+        self.assertEqual((t["wrong_tries"], t["solved"], t["last_fail"]), (3, False, "WRONG_ANSWER"))
+
+    def test_wrong_tries_are_capped(self):
+        fake = FakeSubmissions()
+        fake.problem(1200, ["dp"], ["WRONG_ANSWER"] * 14 + ["OK"], ts(2023, 8))
+        (t,), _ = self.collect(fake)
+        self.assertEqual(t["wrong_tries"], cf.MAX_WRONG_TRIES)
+
+    def test_ability_is_the_rating_at_the_first_attempt(self):
+        fake = FakeSubmissions()
+        fake.problem(1100, ["dp"], ["OK"], ts(2023, 2))   # rating 1000 then
+        fake.problem(1300, ["dp"], ["OK"], ts(2023, 8))   # rating 1300 then
+        trajectories, _ = self.collect(fake)
+        self.assertEqual(
+            [(t["ability_at_attempt"], t["delta"]) for t in trajectories], [(1000, 100), (1300, 0)]
+        )
+
+    def test_unmapped_problems_are_kept_as_trajectories_but_make_no_answer(self):
+        fake = FakeSubmissions()
+        fake.problem(1200, ["implementation"], ["OK"], ts(2023, 8))
+        trajectories, meta = self.collect(fake)
+        self.assertEqual(trajectories[0]["concept_ids"], [])
+        self.assertEqual(meta["dropped_no_concept"], 1)
+        attempt, _ = run(HISTORY, fake.subs)
+        self.assertEqual(attempt["answers"], [])
+        self.assertEqual(len(attempt["trajectories"]), 1)
 
 
 if __name__ == "__main__":

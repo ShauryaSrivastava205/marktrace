@@ -50,6 +50,17 @@ USER_AGENT = "MarkTrace/phase1 (educational root-cause diagnosis)"
 REQUEST_GAP_SECONDS = 2.1          # CF asks for <= ~1 request / 2s
 HTTP_TIMEOUT = 20
 
+# Transient failures (network resets, timeouts, 429/5xx, CF's own "call limit
+# exceeded") are retried with exponential backoff before giving up.
+RETRY_ATTEMPTS = 4
+RETRY_BACKOFF_SECONDS = 2.0        # 2s, 4s, 8s between attempts
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_sleep = time.sleep                # indirection so tests need not really wait
+
+# Wrong tries before the first accepted solution are capped so one
+# pathological problem cannot dominate any per-concept statistic.
+MAX_WRONG_TRIES = 10
+
 # Difficulty window around the user's rating at the time of the attempt.
 # Failing a problem this-much-above your rating is NOT treated as a weakness.
 RATING_ABOVE = 200
@@ -82,26 +93,45 @@ def _get(method: str, **params: Any) -> Any:
 
     Codeforces reports most failures as HTTP 400 with a JSON body whose
     `comment` explains why, so the body is read before the status is judged.
+    Transient failures are retried with exponential backoff; a missing handle
+    or any other definitive 4xx answer is raised immediately.
     """
-    resp = requests.get(
-        f"{CF_API}/{method}",
-        params=params,
-        headers={"User-Agent": USER_AGENT},
-        timeout=HTTP_TIMEOUT,
+    last_problem = "no response"
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            resp = requests.get(
+                f"{CF_API}/{method}",
+                params=params,
+                headers={"User-Agent": USER_AGENT},
+                timeout=HTTP_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            last_problem = f"network error: {exc}"
+        else:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
+
+            if isinstance(body, dict) and body.get("status") == "OK":
+                return body["result"]
+
+            comment = body.get("comment") if isinstance(body, dict) else None
+            last_problem = comment or f"HTTP {resp.status_code}"
+            if comment and "handle" in comment.lower() and "not found" in comment.lower():
+                raise HandleNotFoundError(f"Codeforces {method}: {comment}")
+            transient = resp.status_code in RETRYABLE_STATUS or (
+                comment is not None and "limit exceeded" in comment.lower()
+            )
+            if not transient:
+                raise CodeforcesError(f"Codeforces API failed on {method}: {last_problem}")
+
+        if attempt < RETRY_ATTEMPTS - 1:
+            _sleep(RETRY_BACKOFF_SECONDS * 2**attempt)
+
+    raise CodeforcesError(
+        f"Codeforces API failed on {method} after {RETRY_ATTEMPTS} attempts: {last_problem}"
     )
-    try:
-        body = resp.json()
-    except ValueError:
-        body = None
-
-    if isinstance(body, dict) and body.get("status") == "OK":
-        return body["result"]
-
-    comment = body.get("comment") if isinstance(body, dict) else None
-    detail = comment or f"HTTP {resp.status_code}"
-    if comment and "not found" in comment.lower():
-        raise HandleNotFoundError(f"Codeforces {method}: {comment}")
-    raise CodeforcesError(f"Codeforces API failed on {method}: {detail}")
 
 
 def fetch_rating_history(handle: str) -> list[tuple[int, int]]:
@@ -169,23 +199,18 @@ def verdict_to_error_type(verdict: str | None) -> str:
 # --------------------------------------------------------------------------- #
 # Build the Attempt
 # --------------------------------------------------------------------------- #
-def build_attempt(handle: str) -> dict:
-    """Public handle -> Attempt dict ready for POST /diagnose.
+def collect_trajectories(submissions: list[dict], history: list[tuple[int, int]]) -> tuple[list[dict], dict]:
+    """Per-problem attempt trajectories for every in-window problem, plus counters.
 
-    Besides `student_id` and `answers`, the result carries a `meta` block
-    counting why evidence was dropped (the engine ignores it).
+    A trajectory keeps what a binary solved/unsolved flag throws away:
+      attempts, wrong_tries (non-accepted submissions BEFORE the first accepted
+      one, or all of them if never solved; capped at MAX_WRONG_TRIES), solved,
+      first_attempt_at, and the user's rating at that moment (`ability`) with
+      the problem's `delta` from it. Judging happens at first-attempt time.
     """
-    history = fetch_rating_history(handle)
-    time.sleep(REQUEST_GAP_SECONDS)
-    submissions = fetch_submissions(handle)
-
-    tag_map = load_tag_map()
-
-    # Aggregate submissions -> one record per problem. Only submissions that
-    # actually carry a verdict about correctness are counted.
     problems: dict[str, dict] = {}
     ignored_submissions = 0
-    for sub in submissions:
+    for sub in sorted(submissions, key=lambda s: int(s.get("creationTimeSeconds", 0))):
         prob = sub.get("problem", {})
         cid = prob.get("contestId")
         idx = prob.get("index")
@@ -195,24 +220,25 @@ def build_attempt(handle: str) -> dict:
         if verdict is None or verdict in IGNORED_VERDICTS:
             ignored_submissions += 1
             continue
-        submitted_at = int(sub.get("creationTimeSeconds", 0))
         key = f"{cid}-{idx}"
         rec = problems.setdefault(
             key,
             {
                 "tags": prob.get("tags", []),
                 "rating": prob.get("rating"),
+                "first_attempt_at": int(sub.get("creationTimeSeconds", 0)),
+                "attempts": 0,
+                "wrong_tries": 0,
                 "solved": False,
-                "first_fail": None,
-                "first_attempt_at": submitted_at,
-                "name": prob.get("name", key),
+                "last_fail": None,
             },
         )
-        rec["first_attempt_at"] = min(rec["first_attempt_at"], submitted_at)
+        rec["attempts"] += 1
         if verdict == "OK":
             rec["solved"] = True
-        elif rec["first_fail"] is None:
-            rec["first_fail"] = verdict
+        elif not rec["solved"]:
+            rec["wrong_tries"] += 1
+            rec["last_fail"] = verdict
 
     meta = {
         "problems_attempted": len(problems),
@@ -223,11 +249,9 @@ def build_attempt(handle: str) -> dict:
         "rated_contests": len(history),
     }
 
-    # One kept problem -> one Answer.
-    answers: list[dict] = []
+    tag_map = load_tag_map()
+    trajectories: list[dict] = []
     for key, rec in problems.items():
-        # Difficulty control against the user's rating when they first
-        # attempted this problem, not their rating today.
         ability = rating_at(history, rec["first_attempt_at"])
         if ability is None:
             meta["dropped_unknown_ability"] += 1
@@ -242,19 +266,52 @@ def build_attempt(handle: str) -> dict:
         concept_ids = tags_to_concepts(rec["tags"], tag_map)
         if not concept_ids:
             meta["dropped_no_concept"] += 1
+        trajectories.append(
+            {
+                "problem_id": key,
+                "concept_ids": concept_ids,
+                "first_attempt_at": rec["first_attempt_at"],
+                "problem_rating": p_rating,
+                "ability_at_attempt": ability,
+                "delta": None if p_rating is None else p_rating - ability,
+                "attempts": rec["attempts"],
+                "wrong_tries": min(rec["wrong_tries"], MAX_WRONG_TRIES),
+                "solved": rec["solved"],
+                "last_fail": rec["last_fail"],
+            }
+        )
+    return trajectories, meta
+
+
+def build_attempt(handle: str) -> dict:
+    """Public handle -> Attempt dict ready for POST /diagnose.
+
+    Besides `student_id` and `answers`, the result carries `meta` (counts of
+    why evidence was dropped) and `trajectories` (per-problem attempt
+    histories for the effort signal). The engine ignores both.
+    """
+    history = fetch_rating_history(handle)
+    time.sleep(REQUEST_GAP_SECONDS)
+    submissions = fetch_submissions(handle)
+    trajectories, meta = collect_trajectories(submissions, history)
+
+    # One mapped in-window problem -> one Answer.
+    answers: list[dict] = []
+    for t in trajectories:
+        if not t["concept_ids"]:
             continue  # no concept signal -> contributes nothing (correct)
         answers.append(
             {
-                "question_id": f"cf_{key}",
-                "concept_ids": concept_ids,
-                "correct": rec["solved"],
-                "error_type": None if rec["solved"] else verdict_to_error_type(rec["first_fail"]),
+                "question_id": f"cf_{t['problem_id']}",
+                "concept_ids": t["concept_ids"],
+                "correct": t["solved"],
+                "error_type": None if t["solved"] else verdict_to_error_type(t["last_fail"]),
                 # One unit of evidence split across the mapped concepts.
-                "weight": 1 / len(concept_ids),
+                "weight": 1 / len(t["concept_ids"]),
             }
         )
 
-    return {"student_id": handle, "answers": answers, "meta": meta}
+    return {"student_id": handle, "answers": answers, "meta": meta, "trajectories": trajectories}
 
 
 def summarize(attempt: dict) -> str:

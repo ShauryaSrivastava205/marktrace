@@ -18,9 +18,13 @@ from .stage5_confidence import add_confidence
 from .stage6_mark_impact import add_mark_impact
 
 
-def diagnose(attempt: Attempt, min_evidence: float = 0.0) -> dict:
+def diagnose(
+    attempt: Attempt,
+    min_evidence: float = 0.0,
+    effort_weak: dict[str, dict] | None = None,
+) -> dict:
     conceptual_evidence, excluded = gate(attempt)
-    weakness = concept_weakness(attempt, min_evidence)
+    weakness = concept_weakness(attempt, min_evidence, effort_weak)
     candidates = candidate_root_causes(weakness)
     roots = select_root_causes(candidates)
     roots = add_confidence(roots, weakness)
@@ -37,6 +41,8 @@ def diagnose(attempt: Attempt, min_evidence: float = 0.0) -> dict:
             "name": get_label(concept_id),
             "mastery": info["mastery"],
             "status": info["status"],
+            # Only present when the weakness came from the effort signal.
+            **({"source": "effort"} if info.get("source") == "effort" else {}),
         }
         for concept_id, info in weakness.items()
     ]

@@ -15,6 +15,11 @@ Two signals feed the tier:
 HIGH is intentionally unreachable here — it's reserved for a future Verify
 step (e.g. a targeted follow-up question actually confirming the gap),
 not something inferable from Stage 1-4 evidence alone.
+
+A root whose weakness came from the effort signal (source == "effort") does
+not have failed answers to count. It carries the tier the effort detector
+assigned (LOW or MEDIUM, never higher), still capped at LOW if reaching its
+explained concepts relies on a SOFT edge.
 """
 
 from .graph_loader import get_conceptual_edges, get_edge_strength
@@ -68,7 +73,12 @@ def add_confidence(roots: list[dict], weakness: dict[str, dict]) -> list[dict]:
     per-concept weakness map and the graph's conceptual edge strengths."""
     scored: list[dict] = []
     for root in roots:
-        support = sum(weakness[concept_id]["weak_wrong"] for concept_id in root["explains"])
         relies_on_soft = _relies_on_soft(root["concept_id"], root["explains"])
+        info = weakness[root["concept_id"]]
+        if info.get("source") == "effort":
+            tier = "LOW" if relies_on_soft else info["effort_tier"]
+            scored.append({**root, "confidence": tier, "support": info["effort_solved"]})
+            continue
+        support = sum(weakness[concept_id]["weak_wrong"] for concept_id in root["explains"])
         scored.append({**root, "confidence": _tier(support, relies_on_soft), "support": support})
     return scored

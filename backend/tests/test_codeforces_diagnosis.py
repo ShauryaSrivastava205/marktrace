@@ -11,7 +11,7 @@ def diagnose_fixture(fake: FakeSubmissions) -> dict:
          mock.patch.object(cf, "fetch_submissions", return_value=fake.subs), \
          mock.patch.object(cf, "REQUEST_GAP_SECONDS", 0):
         attempt = cf.build_attempt("fixture")
-    return diagnose_codeforces(attempt)
+    return diagnose_codeforces(attempt, baseline=None)  # mastery signal only
 
 
 class MinimumEvidenceTests(unittest.TestCase):
