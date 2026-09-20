@@ -20,9 +20,14 @@ from .stage1_evidence_gate import EVIDENCE_ERROR_TYPES
 MASTERY_THRESHOLD = 0.5
 
 
-def concept_weakness(attempt: Attempt) -> dict[str, dict]:
+def concept_weakness(attempt: Attempt, min_evidence: float = 0.0) -> dict[str, dict]:
     """Per-concept {strength, weak_wrong, mastery, status} for every concept
-    tagged on any answer in the attempt."""
+    tagged on any answer in the attempt.
+
+    min_evidence is a floor on strength + weak_wrong (weighted attempts). A
+    concept below it is "insufficient" however bad its ratio looks, so a
+    couple of failures can't make it a root gap. The default 0 applies no
+    floor, which keeps the original quiz behaviour."""
     strength: dict[str, float] = {}
     weak_wrong: dict[str, float] = {}
     concept_ids: set[str] = set()
@@ -43,7 +48,7 @@ def concept_weakness(attempt: Attempt) -> dict[str, dict]:
         total = s + w
         mastery = s / total if total > 0 else None
 
-        if mastery is None:
+        if mastery is None or total + 1e-9 < min_evidence:
             status = "insufficient"
         elif mastery < MASTERY_THRESHOLD:
             status = "weak"

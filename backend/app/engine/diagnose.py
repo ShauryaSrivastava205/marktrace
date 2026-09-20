@@ -18,9 +18,9 @@ from .stage5_confidence import add_confidence
 from .stage6_mark_impact import add_mark_impact
 
 
-def diagnose(attempt: Attempt) -> dict:
+def diagnose(attempt: Attempt, min_evidence: float = 0.0) -> dict:
     conceptual_evidence, excluded = gate(attempt)
-    weakness = concept_weakness(attempt)
+    weakness = concept_weakness(attempt, min_evidence)
     candidates = candidate_root_causes(weakness)
     roots = select_root_causes(candidates)
     roots = add_confidence(roots, weakness)
