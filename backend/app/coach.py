@@ -15,7 +15,7 @@ from .engine.models import CoachRequest, RootGap
 
 logger = logging.getLogger("marktrace.coach")
 
-MODEL_NAME = "gemini-1.5-flash"
+MODEL_NAME = "gemini-2.0-flash"
 REQUEST_TIMEOUT_SECONDS = 15
 WORD_LIMIT = 150
 
