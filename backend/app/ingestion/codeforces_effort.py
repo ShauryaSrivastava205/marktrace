@@ -16,6 +16,9 @@ This module scores it against a population baseline:
 Gates (each exists because a looser rule was shown to over-flag on real data):
   - at least MIN_PROBLEMS in-window problems and MIN_SOLVED solved;
   - z >= Z_FLAG;
+  - an absolute effect of at least MIN_EFFECT extra wrong tries versus peers at
+    the same difficulty (per-concept SDs are tight because medians are nearly
+    always 0 or 1, so z alone can flag a 0.7-try difference);
   - correlated tag clusters are de-duplicated: a concept only counts problems
     not already used by a stronger flagged concept (graph + dfs share problems);
   - temporal persistence: both chronological halves of the concept's solved
@@ -52,6 +55,7 @@ MIN_HALF_SOLVED = 3        # solved problems needed in each half for persistence
 MIN_POP_HANDLES = 15       # handles needed for a concept to have a baseline
 Z_FLAG = 3.0               # a flag needs z >= this (z >= 2 flags ~13% of ordinary handles)
 Z_HALF = 1.5               # each chronological half must reach this
+MIN_EFFECT = 1.0           # extra wrong tries vs peers (median residual - population mean)
 Z_MEDIUM = 4.0             # effort gaps reach MEDIUM only above this AND with both
                            # halves at Z_FLAG; they never go higher without a verify probe
 
@@ -184,6 +188,7 @@ def _evaluate(problems: list[dict], stats: dict, baseline: dict) -> dict | None:
         "median_residual": round(median, 3),
         "raw_median_wrong_tries": statistics.median(t["wrong_tries"] for t in solved),
         "z": round(_z(median, stats), 2),
+        "effect": round(median - stats["mean"], 3),
         "z_first_half": None if halves is None else round(halves[0], 2),
         "z_second_half": None if halves is None else round(halves[1], 2),
     }
@@ -193,6 +198,7 @@ def _passes(result: dict | None) -> bool:
     return (
         result is not None
         and result["z"] >= Z_FLAG
+        and result["effect"] >= MIN_EFFECT - 1e-9
         and result["z_first_half"] is not None
         and result["z_first_half"] >= Z_HALF
         and result["z_second_half"] >= Z_HALF
@@ -202,6 +208,14 @@ def _passes(result: dict | None) -> bool:
 def _tier(result: dict) -> str:
     strong = result["z"] >= Z_MEDIUM and min(result["z_first_half"], result["z_second_half"]) >= Z_FLAG
     return "MEDIUM" if strong else "LOW"  # never HIGH: only a verify probe can confirm
+
+
+def _rejection(result: dict | None, shared: int) -> str:
+    if result is None or result["z"] < Z_FLAG:
+        return f"evidence overlaps a stronger flagged concept ({shared} shared problems)"
+    if result["effect"] < MIN_EFFECT - 1e-9:
+        return f"effect too small ({result['effect']:.1f} extra wrong tries vs peers, needs {MIN_EFFECT:g})"
+    return "not persistent across both halves of history"
 
 
 def effort_analysis(trajectories: list[dict], baseline: dict) -> dict:
@@ -243,13 +257,9 @@ def effort_analysis(trajectories: list[dict], baseline: dict) -> dict:
             )
             used.update(t["problem_id"] for t in problems)
         else:
-            persistent_signal = result is not None and result["z"] >= Z_FLAG
-            reason = (
-                "not persistent across both halves of history"
-                if persistent_signal
-                else f"evidence overlaps a stronger flagged concept ({shared} shared problems)"
+            suppressed.append(
+                {"concept_id": concept, "z": first_pass["z"], "reason": _rejection(result, shared)}
             )
-            suppressed.append({"concept_id": concept, "z": first_pass["z"], "reason": reason})
     return {"flags": flags, "suppressed": suppressed}
 
 

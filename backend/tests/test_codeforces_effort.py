@@ -115,6 +115,29 @@ class EffortDetectionTests(unittest.TestCase):
         self.assertEqual(diagnose_fake(fake)["root_gaps"], [])
 
 
+class EffectSizeTests(unittest.TestCase):
+    def test_a_large_z_from_a_tiny_spread_is_not_flagged_without_a_real_effect(self):
+        # Peers are very uniform (SD 0.05), so half-the-problems-need-a-retry
+        # (median residual 0.0, only 0.5 extra tries) still reaches z = 10.
+        tight = synthetic_baseline()
+        tight["concepts"]["dp"]["sd"] = 0.05
+        fake = FakeSubmissions()
+        for i, when in enumerate(months(12)):
+            fake.problem(1250, ["dp"], ["WRONG_ANSWER", "OK"] if i % 2 else CLEAN, when)
+        result = diagnose_fake(fake, baseline=tight)
+        self.assertEqual(result["root_gaps"], [])
+        (suppressed,) = result["effort"]["suppressed"]
+        self.assertGreater(suppressed["z"], ce.Z_FLAG)
+        self.assertIn("effect too small", suppressed["reason"])
+
+    def test_an_effect_of_exactly_one_extra_wrong_try_passes(self):
+        fake = FakeSubmissions()
+        for when in months(12):
+            fake.problem(1250, ["dp"], ["WRONG_ANSWER", "OK"], when)   # median residual +0.5 vs -0.5
+        (flag,) = diagnose_fake(fake)["effort"]["flags"]
+        self.assertEqual(flag["effect"], 1.0)
+
+
 class DeduplicationTests(unittest.TestCase):
     def test_graph_and_dfs_on_the_same_problems_are_one_flag(self):
         fake = FakeSubmissions()

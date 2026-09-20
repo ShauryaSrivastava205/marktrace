@@ -98,7 +98,7 @@ def diagnose_codeforces(
 
 def _effort_sentence(gap: dict) -> str:
     e = gap["effort"]
-    extra = e["median_residual"] - e["population_mean_residual"]
+    extra = e["effect"]
     return (
         f"{gap['name']}: you do solve these problems eventually, but across {e['n_solved']} "
         f"solved problems in your range the typical one took {e['raw_median_wrong_tries']:g} "
