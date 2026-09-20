@@ -26,7 +26,8 @@ HONEST CAVEATS (read before trusting output):
      rating AT THE TIME OF THE ATTEMPT (from user.rating history), so "couldn't
      solve a 2500" is not counted as a weakness. Attempts made before the
      user's first rated contest have no known ability and are dropped, not
-     guessed. Tune the window.
+     guessed. The window's ceiling is floored at MIN_WINDOW_CEILING so very
+     low-rated beginners are not erased. Tune the window.
   3. verdict -> error_type is a heuristic, not ground truth.
   4. A multi-tag problem splits ONE unit of evidence across its mapped
      concepts (weight = 1/n) instead of counting in full for each.
@@ -49,10 +50,14 @@ USER_AGENT = "MarkTrace/phase1 (educational root-cause diagnosis)"
 REQUEST_GAP_SECONDS = 2.1          # CF asks for <= ~1 request / 2s
 HTTP_TIMEOUT = 20
 
-# Difficulty window around the user's current rating.
+# Difficulty window around the user's rating at the time of the attempt.
 # Failing a problem this-much-above your rating is NOT treated as a weakness.
 RATING_ABOVE = 200
 RATING_BELOW = 400
+# The window's ceiling never drops below this. The easiest Codeforces problems
+# are rated 800, so a new user whose first rating is ~400 would otherwise see
+# every problem on the site excluded as "far above" them and lose all evidence.
+MIN_WINDOW_CEILING = 1000
 
 # Submissions with these verdicts (or no verdict yet) are not evidence either
 # way: they are not a correct solution and not a real wrong attempt.
@@ -229,7 +234,8 @@ def build_attempt(handle: str) -> dict:
             continue
         p_rating = rec["rating"]
         if p_rating is not None and (
-            p_rating > ability + RATING_ABOVE or p_rating < ability - RATING_BELOW
+            p_rating > max(ability + RATING_ABOVE, MIN_WINDOW_CEILING)
+            or p_rating < ability - RATING_BELOW
         ):
             meta["dropped_outside_window"] += 1
             continue

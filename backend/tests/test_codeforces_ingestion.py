@@ -150,6 +150,25 @@ class TemporalWindowTests(unittest.TestCase):
         attempt, _ = run([], fake.subs)
         self.assertEqual(attempt["answers"], [])
 
+    def test_a_low_rated_beginner_keeps_the_easiest_problems(self):
+        # Rated 404 after one contest: ceiling would be 604, above which sits
+        # every problem on the site. The floor keeps the 800-1000 band.
+        beginner = [(ts(2023, 1), 404)]
+        fake = FakeSubmissions()
+        fake.problem(800, ["greedy"], ["WRONG_ANSWER"], ts(2023, 2))
+        fake.problem(1000, ["greedy"], ["OK"], ts(2023, 2))
+        fake.problem(1200, ["greedy"], ["WRONG_ANSWER"], ts(2023, 2))  # still above
+        attempt, _ = run(beginner, fake.subs)
+        self.assertEqual([a["question_id"] for a in attempt["answers"]], ["cf_1000-A", "cf_1001-A"])
+        self.assertEqual(attempt["meta"]["dropped_outside_window"], 1)
+
+    def test_the_ceiling_floor_does_not_loosen_the_window_for_stronger_users(self):
+        fake = FakeSubmissions()
+        fake.problem(1600, ["dp"], ["WRONG_ANSWER"], ts(2023, 8))  # ability 1300 -> ceiling 1500
+        attempt, _ = run(HISTORY, fake.subs)
+        self.assertEqual(attempt["answers"], [])
+        self.assertEqual(attempt["meta"]["dropped_outside_window"], 1)
+
     def test_rating_at_is_a_step_function_over_contest_history(self):
         self.assertIsNone(cf.rating_at(HISTORY, ts(2022, 12)))
         self.assertEqual(cf.rating_at(HISTORY, ts(2023, 1)), 1000)
