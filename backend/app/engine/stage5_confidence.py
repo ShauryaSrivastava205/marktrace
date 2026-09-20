@@ -51,15 +51,16 @@ def _relies_on_soft(root_id: str, explained: list[str]) -> bool:
     return any(concept_id not in strong_reachable for concept_id in explained)
 
 
-def _tier(support: int, relies_on_soft: bool) -> str:
+def _tier(support: float, relies_on_soft: bool) -> str:
+    # Support can be fractional (weighted evidence), so tiers are ranges:
+    # (.., 1] INSUFFICIENT, (1, 3) LOW, [3, ..) MEDIUM. For whole-number
+    # support this matches the original 1 / 2 / 3+ behaviour exactly.
     if support <= SUPPORT_INSUFFICIENT_MAX:
         return "INSUFFICIENT"
-    if support == SUPPORT_LOW or relies_on_soft:
+    if support < SUPPORT_MEDIUM_MIN or relies_on_soft:
         return "LOW"
-    if support >= SUPPORT_MEDIUM_MIN and not relies_on_soft:
-        return "MEDIUM"
     # HIGH is unreachable here — see module docstring.
-    raise AssertionError(f"unreachable tier for support={support}, relies_on_soft={relies_on_soft}")
+    return "MEDIUM"
 
 
 def add_confidence(roots: list[dict], weakness: dict[str, dict]) -> list[dict]:

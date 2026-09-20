@@ -16,7 +16,12 @@ class Answer(BaseModel):
     concept_ids: list[str]
     correct: bool
     error_type: Optional[ErrorType] = None
-    marks: int
+    # Exam marks. Only assessments with real marks set this; other sources
+    # (e.g. Codeforces) leave it 0 and must not be described as "marks".
+    marks: int = 0
+    # Share of one unit of evidence this answer contributes to each concept it
+    # tags. 1.0 preserves the original one-answer-one-vote behaviour.
+    weight: float = 1.0
 
 
 class Attempt(BaseModel):

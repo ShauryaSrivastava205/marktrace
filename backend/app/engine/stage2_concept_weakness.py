@@ -23,17 +23,17 @@ MASTERY_THRESHOLD = 0.5
 def concept_weakness(attempt: Attempt) -> dict[str, dict]:
     """Per-concept {strength, weak_wrong, mastery, status} for every concept
     tagged on any answer in the attempt."""
-    strength: dict[str, int] = {}
-    weak_wrong: dict[str, int] = {}
+    strength: dict[str, float] = {}
+    weak_wrong: dict[str, float] = {}
     concept_ids: set[str] = set()
 
     for answer in attempt.answers:
         concept_ids.update(answer.concept_ids)
         for concept_id in answer.concept_ids:
             if answer.correct:
-                strength[concept_id] = strength.get(concept_id, 0) + 1
+                strength[concept_id] = strength.get(concept_id, 0) + answer.weight
             elif answer.error_type in EVIDENCE_ERROR_TYPES:
-                weak_wrong[concept_id] = weak_wrong.get(concept_id, 0) + 1
+                weak_wrong[concept_id] = weak_wrong.get(concept_id, 0) + answer.weight
             # implementation/careless wrong answers: neutral, counted nowhere.
 
     result: dict[str, dict] = {}

@@ -10,7 +10,7 @@ The whole idea: one attempted Codeforces problem == one `Answer`.
   - problem tags        -> concept_ids   (via data/codeforces_tag_map.json)
   - solved?             -> correct
   - failing verdict     -> error_type    (heuristic)
-  - problem difficulty  -> marks         (weight)
+  - tag count           -> weight        (1 / number of mapped concepts)
 Feed the resulting Answers to the UNCHANGED engine and it traces the root
 gap exactly as it does for the quiz. The concept graph does the upstream
 tracing — we only supply surface signals here.
@@ -22,11 +22,16 @@ Run it:
 HONEST CAVEATS (read before trusting output):
   1. Mapping quality is everything — reconcile codeforces_tag_map.json against
      your real graph node ids first.
-  2. Difficulty control matters: we DROP problems rated far above the user, so
-     "couldn't solve a 2500" is not counted as a weakness. Tune the window.
+  2. Difficulty control matters: we DROP problems rated far above the user's
+     rating AT THE TIME OF THE ATTEMPT (from user.rating history), so "couldn't
+     solve a 2500" is not counted as a weakness. Attempts made before the
+     user's first rated contest have no known ability and are dropped, not
+     guessed. Tune the window.
   3. verdict -> error_type is a heuristic, not ground truth.
-  4. A multi-tag problem assigns its failure to several concepts (dilutes
-     signal). Acceptable for v1; revisit if diagnoses look noisy.
+  4. A multi-tag problem splits ONE unit of evidence across its mapped
+     concepts (weight = 1/n) instead of counting in full for each.
+  5. Verdicts that say nothing about correctness (PARTIAL, SKIPPED,
+     IDLENESS_LIMIT_EXCEEDED, still-testing) are ignored, not counted as failures.
 """
 
 from __future__ import annotations
@@ -48,7 +53,10 @@ HTTP_TIMEOUT = 20
 # Failing a problem this-much-above your rating is NOT treated as a weakness.
 RATING_ABOVE = 200
 RATING_BELOW = 400
-DEFAULT_RATING = 1200              # used when a handle has no rating history
+
+# Submissions with these verdicts (or no verdict yet) are not evidence either
+# way: they are not a correct solution and not a real wrong attempt.
+IGNORED_VERDICTS = {"PARTIAL", "SKIPPED", "IDLENESS_LIMIT_EXCEEDED", "TESTING"}
 
 _TAG_MAP_PATH = Path(__file__).resolve().parents[2] / "data" / "codeforces_tag_map.json"
 
@@ -56,30 +64,62 @@ _TAG_MAP_PATH = Path(__file__).resolve().parents[2] / "data" / "codeforces_tag_m
 # --------------------------------------------------------------------------- #
 # CF API calls
 # --------------------------------------------------------------------------- #
+class CodeforcesError(RuntimeError):
+    """A Codeforces API call failed; the message carries CF's own `comment`."""
+
+
+class HandleNotFoundError(CodeforcesError):
+    """The handle does not exist on Codeforces."""
+
+
 def _get(method: str, **params: Any) -> Any:
-    """Call one CF API method, return `result`, raise on FAILED."""
+    """Call one CF API method, return `result`, raise CodeforcesError on failure.
+
+    Codeforces reports most failures as HTTP 400 with a JSON body whose
+    `comment` explains why, so the body is read before the status is judged.
+    """
     resp = requests.get(
         f"{CF_API}/{method}",
         params=params,
         headers={"User-Agent": USER_AGENT},
         timeout=HTTP_TIMEOUT,
     )
-    resp.raise_for_status()
-    body = resp.json()
-    if body.get("status") != "OK":
-        raise RuntimeError(f"Codeforces API failed on {method}: {body.get('comment')}")
-    return body["result"]
-
-
-def fetch_current_rating(handle: str) -> int:
-    """Latest rating from user.rating, or DEFAULT_RATING if unrated."""
     try:
-        changes = _get("user.rating", handle=handle)
-    except RuntimeError:
-        return DEFAULT_RATING
-    if not changes:
-        return DEFAULT_RATING
-    return int(changes[-1]["newRating"])
+        body = resp.json()
+    except ValueError:
+        body = None
+
+    if isinstance(body, dict) and body.get("status") == "OK":
+        return body["result"]
+
+    comment = body.get("comment") if isinstance(body, dict) else None
+    detail = comment or f"HTTP {resp.status_code}"
+    if comment and "not found" in comment.lower():
+        raise HandleNotFoundError(f"Codeforces {method}: {comment}")
+    raise CodeforcesError(f"Codeforces API failed on {method}: {detail}")
+
+
+def fetch_rating_history(handle: str) -> list[tuple[int, int]]:
+    """Rated-contest history as [(unix_time, new_rating), ...], oldest first.
+
+    Empty for a real handle that has never taken part in a rated contest.
+    Raises HandleNotFoundError for a handle that does not exist.
+    """
+    changes = _get("user.rating", handle=handle)
+    return sorted((int(c["ratingUpdateTimeSeconds"]), int(c["newRating"])) for c in changes)
+
+
+def rating_at(history: list[tuple[int, int]], timestamp: int) -> int | None:
+    """The user's rating as of `timestamp`: the newRating from their latest
+    rated contest at or before it. Rating only changes at contests, so this is
+    a step function rather than an interpolation. None if the user had not yet
+    completed a rated contest (ability unknown)."""
+    current: int | None = None
+    for updated_at, new_rating in history:
+        if updated_at > timestamp:
+            break
+        current = new_rating
+    return current
 
 
 def fetch_submissions(handle: str) -> list[dict]:
@@ -121,33 +161,36 @@ def verdict_to_error_type(verdict: str | None) -> str:
     return "conceptual"
 
 
-def _difficulty_marks(rating: int | None) -> int:
-    if not rating:
-        return 3
-    return max(1, round(rating / 100))
-
-
 # --------------------------------------------------------------------------- #
 # Build the Attempt
 # --------------------------------------------------------------------------- #
 def build_attempt(handle: str) -> dict:
-    """Public handle -> Attempt dict ready for POST /diagnose."""
-    rating = fetch_current_rating(handle)
+    """Public handle -> Attempt dict ready for POST /diagnose.
+
+    Besides `student_id` and `answers`, the result carries a `meta` block
+    counting why evidence was dropped (the engine ignores it).
+    """
+    history = fetch_rating_history(handle)
     time.sleep(REQUEST_GAP_SECONDS)
     submissions = fetch_submissions(handle)
 
     tag_map = load_tag_map()
-    ceiling = rating + RATING_ABOVE
-    floor = rating - RATING_BELOW
 
-    # Aggregate submissions -> one record per problem.
+    # Aggregate submissions -> one record per problem. Only submissions that
+    # actually carry a verdict about correctness are counted.
     problems: dict[str, dict] = {}
+    ignored_submissions = 0
     for sub in submissions:
         prob = sub.get("problem", {})
         cid = prob.get("contestId")
         idx = prob.get("index")
         if cid is None or idx is None:
             continue
+        verdict = sub.get("verdict")
+        if verdict is None or verdict in IGNORED_VERDICTS:
+            ignored_submissions += 1
+            continue
+        submitted_at = int(sub.get("creationTimeSeconds", 0))
         key = f"{cid}-{idx}"
         rec = problems.setdefault(
             key,
@@ -155,37 +198,57 @@ def build_attempt(handle: str) -> dict:
                 "tags": prob.get("tags", []),
                 "rating": prob.get("rating"),
                 "solved": False,
-                "worst_fail": None,
+                "first_fail": None,
+                "first_attempt_at": submitted_at,
                 "name": prob.get("name", key),
             },
         )
-        verdict = sub.get("verdict")
+        rec["first_attempt_at"] = min(rec["first_attempt_at"], submitted_at)
         if verdict == "OK":
             rec["solved"] = True
-        elif rec["worst_fail"] is None:
-            rec["worst_fail"] = verdict
+        elif rec["first_fail"] is None:
+            rec["first_fail"] = verdict
+
+    meta = {
+        "problems_attempted": len(problems),
+        "ignored_submissions": ignored_submissions,
+        "dropped_unknown_ability": 0,
+        "dropped_outside_window": 0,
+        "dropped_no_concept": 0,
+        "rated_contests": len(history),
+    }
 
     # One kept problem -> one Answer.
     answers: list[dict] = []
     for key, rec in problems.items():
+        # Difficulty control against the user's rating when they first
+        # attempted this problem, not their rating today.
+        ability = rating_at(history, rec["first_attempt_at"])
+        if ability is None:
+            meta["dropped_unknown_ability"] += 1
+            continue
         p_rating = rec["rating"]
-        # Difficulty control: skip problems well above the user's rating.
-        if p_rating is not None and (p_rating > ceiling or p_rating < floor):
+        if p_rating is not None and (
+            p_rating > ability + RATING_ABOVE or p_rating < ability - RATING_BELOW
+        ):
+            meta["dropped_outside_window"] += 1
             continue
         concept_ids = tags_to_concepts(rec["tags"], tag_map)
         if not concept_ids:
+            meta["dropped_no_concept"] += 1
             continue  # no concept signal -> contributes nothing (correct)
         answers.append(
             {
                 "question_id": f"cf_{key}",
                 "concept_ids": concept_ids,
                 "correct": rec["solved"],
-                "error_type": None if rec["solved"] else verdict_to_error_type(rec["worst_fail"]),
-                "marks": _difficulty_marks(p_rating),
+                "error_type": None if rec["solved"] else verdict_to_error_type(rec["first_fail"]),
+                # One unit of evidence split across the mapped concepts.
+                "weight": 1 / len(concept_ids),
             }
         )
 
-    return {"student_id": handle, "answers": answers}
+    return {"student_id": handle, "answers": answers, "meta": meta}
 
 
 def summarize(attempt: dict) -> str:
@@ -202,8 +265,10 @@ def summarize(attempt: dict) -> str:
                 bucket[1] += 1
     lines = [
         f"handle={attempt['student_id']}  problems_used={total}  unsolved={wrong}",
-        "weakest concepts (failed / attempted):",
     ]
+    if "meta" in attempt:
+        lines.append("dropped: " + ", ".join(f"{k}={v}" for k, v in attempt["meta"].items()))
+    lines.append("weakest concepts (failed / attempted):")
     ranked = sorted(per_concept.items(), key=lambda kv: (kv[1][1] / kv[1][0]), reverse=True)
     for cid, (att, fail) in ranked[:10]:
         lines.append(f"  {cid:<18} {fail}/{att}")
