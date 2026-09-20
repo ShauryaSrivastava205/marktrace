@@ -5,8 +5,10 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from .coach import coach as run_coach
+from .coach import gemini_api_key
 from .engine.diagnose import diagnose
-from .engine.models import Attempt, VerifyProbeRequest, VerifyRequest
+from .engine.models import Attempt, CoachRequest, VerifyProbeRequest, VerifyRequest
 from .engine.verify import get_probe, grade
 
 
@@ -58,3 +60,10 @@ def verify_grade_endpoint(request: VerifyRequest) -> dict:
         return grade(request.root_concept_id, request.downstream_concept_id, request.answers)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/coach")
+def coach_endpoint(request: CoachRequest) -> dict:
+    if not gemini_api_key():
+        raise HTTPException(status_code=503, detail="coach unavailable")
+    return run_coach(request)

@@ -47,3 +47,32 @@ class VerifyRequest(BaseModel):
 class VerifyProbeRequest(BaseModel):
     root_concept_id: str
     downstream_concept_id: str
+
+
+ConfidenceTier = Literal["INSUFFICIENT", "LOW", "MEDIUM", "HIGH"]
+
+
+class RootGap(BaseModel):
+    concept_id: str
+    name: str
+    confidence: ConfidenceTier
+    marks_associated: int
+    affected_questions: int
+    downstream_affected: list[str]
+
+
+class ConceptMasteryEntry(BaseModel):
+    concept_id: str
+    name: str
+    mastery: Optional[float] = None
+    status: str
+
+
+class CoachRequest(BaseModel):
+    """A subset of the /diagnose response: exactly what the coach is allowed
+    to talk about. Anything not in here must not appear in its output."""
+
+    root_gaps: list[RootGap]
+    concept_mastery: list[ConceptMasteryEntry]
+    explanation: str
+    evidence_sufficient: bool
