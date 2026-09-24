@@ -114,6 +114,40 @@ export function postDiagnose(attempt: Attempt): Promise<DiagnoseResult> {
 }
 
 /**
+ * The slice of a diagnosis the coach is allowed to see - mirrors the backend's
+ * CoachRequest, which defines it as exactly what the coach may talk about.
+ */
+export type CoachRequest = Pick<
+  DiagnoseResult,
+  "root_gaps" | "concept_mastery" | "explanation" | "evidence_sufficient"
+>
+
+export interface CoachResponse {
+  /** Markdown. On a Gemini failure the backend still answers 200 here, with a
+   *  plain factual restatement of the top root gap instead of coaching. */
+  coaching: string
+}
+
+/**
+ * Picks the coach's fields out of a full diagnosis. Sent explicitly rather than
+ * spreading the diagnosis, so the student id, blast radius and anything added
+ * to /diagnose later never reach the model by accident.
+ */
+export function coachRequestFrom(diagnose: DiagnoseResult): CoachRequest {
+  return {
+    root_gaps: diagnose.root_gaps,
+    concept_mastery: diagnose.concept_mastery,
+    explanation: diagnose.explanation,
+    evidence_sufficient: diagnose.evidence_sufficient,
+  }
+}
+
+/** POST /coach - plain-language coaching for a diagnosis. 503 when unconfigured. */
+export function postCoach(request: CoachRequest): Promise<CoachResponse> {
+  return postJson<CoachResponse>("/coach", request)
+}
+
+/**
  * POST /verify/probe - the three probes for one root/downstream pair.
  * Named `get` because it reads; the endpoint takes its arguments in a body.
  * Responds 404 when no probe connects that pair.

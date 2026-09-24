@@ -38,6 +38,9 @@ export function RootGapCards({ diagnose, onSelectConcept }: RootGapCardsProps) {
           const pct = masteryPercent(
             diagnose.concept_mastery.find((c) => c.concept_id === gap.concept_id)?.mastery ?? null,
           )
+          // A null score or an INSUFFICIENT root is unmeasured, not zero -
+          // showing "0%" would read as a measured total failure.
+          const insufficient = pct === null || gap.confidence === "INSUFFICIENT"
 
           return (
             <motion.article
@@ -76,19 +79,23 @@ export function RootGapCards({ diagnose, onSelectConcept }: RootGapCardsProps) {
                   </span>
                 </div>
 
-                {pct !== null && (
-                  <div className="mt-4">
-                    <div className="flex items-baseline justify-between">
+                <div className="mt-4">
+                  <div className="flex items-baseline justify-between">
+                    {insufficient ? (
+                      <span className="font-serif text-3xl font-semibold italic text-muted-foreground">
+                        Insufficient
+                      </span>
+                    ) : (
                       <span className="font-serif text-3xl font-semibold tabular-nums text-foreground">
                         {pct}%
                       </span>
-                      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                        mastery
-                      </span>
-                    </div>
-                    <MasteryMeter pct={pct} status="root_gap" className="mt-2" />
+                    )}
+                    <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      mastery
+                    </span>
                   </div>
-                )}
+                  {!insufficient && <MasteryMeter pct={pct} status="root_gap" className="mt-2" />}
+                </div>
 
                 <dl className="mt-5 space-y-3 border-t border-border pt-4 text-[13px]">
                   <Row label="Evidence">

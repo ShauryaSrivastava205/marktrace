@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { LogOut } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 
 import { diagnoseResult as sampleDiagnose } from "@/lib/mockDiagnose"
 import type { DiagnoseResult } from "@/lib/mockDiagnose"
@@ -11,6 +11,7 @@ import { readSession } from "@/lib/session"
 import { chooseVerifyTarget, targetFromParams, type VerifyTarget } from "@/lib/verify"
 import { resolveConceptName } from "@/lib/conceptNames"
 import { LoadingState, ErrorState, FallbackNotice } from "@/components/api-state"
+import { AppHeader } from "@/components/app-header"
 import { VerifyFlow } from "./verify-flow"
 import { VerificationComingSoon } from "./coming-soon"
 
@@ -50,42 +51,23 @@ export function VerifyView() {
 
   return (
     <main className="min-h-screen bg-background bg-grid-paper">
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/90 px-6 py-4 backdrop-blur-sm sm:px-8">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden="true"
-            className="flex size-7 items-center justify-center rounded-sm bg-primary text-xs font-semibold text-primary-foreground"
-          >
-            M
-          </span>
-          <span className="font-serif text-lg font-semibold tracking-tight text-foreground">
-            MarkTrace
-          </span>
-          {resolved && (
-            <span className="ml-3 hidden border-l border-border pl-3 font-mono text-[11px] uppercase tracking-[0.1em] text-muted-foreground sm:inline">
-              {resolved.diagnose.student_id}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-5">
-          <Link
-            href="/results"
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Diagnosis
-          </Link>
-          <Link
-            href="/login"
-            className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <LogOut className="size-4" aria-hidden="true" />
-            Log out
-          </Link>
-        </div>
-      </header>
+      <AppHeader
+        context={resolved?.diagnose.student_id}
+        links={[
+          { href: "/dashboard", label: "Dashboard" },
+          { href: "/results", label: "Diagnosis" },
+        ]}
+      />
 
       <div className="mx-auto max-w-4xl px-6 py-10 sm:px-8 lg:py-12">
+        <Link
+          href="/dashboard"
+          className="mb-8 inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <ArrowLeft className="size-3.5" aria-hidden="true" />
+          Back to Dashboard
+        </Link>
+
         {!resolved ? (
           <LoadingState title="Loading your diagnosis…" />
         ) : (
