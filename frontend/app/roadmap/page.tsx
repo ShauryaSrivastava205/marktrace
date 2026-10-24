@@ -23,6 +23,11 @@ import {
   type RoadmapInput,
   type SkillLevel,
 } from "@/lib/roadmap"
+import {
+  createInitialProfile,
+  recordMilestoneCompletion,
+  type GamificationProfile,
+} from "@/lib/gamification"
 
 const goalOptions: {
   id: LearningGoal
@@ -158,30 +163,61 @@ export default function RoadmapPage() {
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
-  function toggleMilestone(id: string) {
-    setCompleted((current) => {
-      const next = current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id]
+ function toggleMilestone(id: string) {
+  const wasCompleted = completed.includes(id)
 
-      try {
-        window.localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({
-            input: generatedInput,
-            completed: next,
-            createdAt: new Date().toISOString(),
-          }),
-        )
-        setSaved(true)
-      } catch {
-        setSaved(false)
-      }
+  const next = wasCompleted
+    ? completed.filter((item) => item !== id)
+    : [...completed, id]
 
-      return next
-    })
+  setCompleted(next)
+
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        input: generatedInput,
+        completed: next,
+        createdAt: new Date().toISOString(),
+      }),
+    )
+    setSaved(true)
+  } catch {
+    setSaved(false)
   }
 
+  if (!wasCompleted) {
+    try {
+      const profileKey = "marktrace-gamification-v1"
+      const storedProfile = window.localStorage.getItem(profileKey)
+
+      let profile: GamificationProfile = createInitialProfile()
+
+      if (storedProfile) {
+        const parsed = JSON.parse(storedProfile)
+
+        if (
+          typeof parsed.totalXP === "number" &&
+          Array.isArray(parsed.completedMilestones) &&
+          Array.isArray(parsed.claimedRewards) &&
+          Array.isArray(parsed.completedTasks) &&
+          Array.isArray(parsed.activityDates)
+        ) {
+          profile = parsed
+        }
+      }
+
+      const nextProfile = recordMilestoneCompletion(profile, id)
+
+      window.localStorage.setItem(
+        profileKey,
+        JSON.stringify(nextProfile),
+      )
+    } catch {
+      // Roadmap progress remains available if XP storage fails.
+    }
+  }
+}
   function resetRoadmap() {
     setShowRoadmap(false)
     setGeneratedInput(null)
